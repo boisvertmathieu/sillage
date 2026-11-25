@@ -10,11 +10,11 @@ passe par vos garde-fous et revues habituels avant fusion.
 from __future__ import annotations
 
 import hashlib
-import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from sillage.analyze import Analysis, ErrorPattern
+from sillage.classify import classify, display
 from sillage.config import InsightThresholds
 
 CATEGORY_LABELS = {
@@ -70,83 +70,24 @@ def _pct(x: float) -> str:
 
 
 # ------------------------------------------------- conseils par type d'erreur
-_ADVICE: list[tuple[str, str, str, str]] = [
-    # (regex sur la signature, catégorie, action pour l'humain, consigne pour l'agent)
-    (
-        r"(?i)missing script|script .* not found|unknown script",
-        "instructions",
-        "Documenter la bonne commande de test/build dans AGENTS.md.",
-        "Lister les scripts disponibles (`npm run`) avant d'en lancer un.",
-    ),
-    (
-        r"(?i)command not found|not recognized as|introuvable|no such command|is not installed|not found$",
-        "environment",
-        "Outil absent de l'environnement : installer l'outil ou documenter l'alternative.",
-        "Vérifier la présence de l'outil (`command -v`) et utiliser l'alternative documentée.",
-    ),
-    (
-        r"(?i)could not resolve dependencies|artifactory|nexus|econnrefused|etimedout|proxy|certificate|ssl|"
-        r"unable to get local issuer|pkix|certification path|resolve dependencies",
-        "environment",
-        "Problème réseau / proxy / dépôt d'artefacts : documenter la configuration (settings.xml, .npmrc, certificats).",
-        "Utiliser la configuration d'équipe (settings.xml, .npmrc, certificats) documentée dans ce dépôt.",
-    ),
-    (
-        r"(?i)\b401\b|unauthori[sz]ed|\b403\b|forbidden|token .*expired|expired token|authentication",
-        "mcp",
-        "Authentification expirée ou droits manquants : documenter le renouvellement ou corriger le serveur.",
-        "En cas de 401/403, demander à l'utilisateur de renouveler son jeton au lieu de réessayer en boucle.",
-    ),
-    (
-        r"(?i)permission denied|eacces|access is denied",
-        "environment",
-        "Droits insuffisants : préciser les chemins accessibles ou l'utilisateur attendu.",
-        "Ne pas forcer les droits (pas de sudo/chmod) : signaler le blocage.",
-    ),
-    (
-        r"(?i)timed? ?out|timeout|deadline exceeded",
-        "environment",
-        "Opération trop lente : réduire la portée (filtres, pagination) ou augmenter le délai.",
-        "Réduire la portée (filtres, période, pagination) avant de relancer.",
-    ),
-    (
-        r"(?i)no such file|enoent|cannot find (the )?(path|file)|does not exist",
-        "instructions",
-        "Décrire la structure du dépôt (dossiers clés) dans AGENTS.md.",
-        "Vérifier l'arborescence (`ls`, `glob`) avant d'utiliser un chemin.",
-    ),
-    (
-        r"(?i)non-fast-forward|rejected|merge conflict|protected branch",
-        "guardrail",
-        "Rappeler la stratégie de branches et interdire les poussées directes.",
-        "Travailler sur une branche et passer par une PR ; ne jamais forcer une poussée.",
-    ),
-]
-_EXPECTED = re.compile(
-    r"(?i)\btests? (failed|failures?)\b|assertionerror|assertion failed|\b<n> failing\b|failing tests?|"
-    r"expected .* (got|but|to)|tests run: .*failures: |\blint(er|ing)? (error|failed)"
-)
-_EXPECTED_CS = re.compile(r"\bFAILED\b|\bFAIL\b")  # sensible à la casse (pytest, jest)
-
-
 def advice_for(signature: str) -> tuple[str, str]:
-    """(catégorie, action pour l'humain)."""
-    for pattern, category, advice, _hint in _ADVICE:
-        if re.search(pattern, signature):
-            return category, advice
-    return "instructions", "Erreur récurrente : documenter la cause et le contournement là où l'agent les lira."
+    """(catégorie, action pour l'humain) — fonctionne aussi sur les signatures strictes."""
+    rule = classify(signature)
+    return rule.category, rule.advice
 
 
 def agent_hint(signature: str) -> str:
-    for pattern, _category, _advice, hint in _ADVICE:
-        if re.search(pattern, signature):
-            return hint
-    return "Vérifier les prérequis avant d'exécuter ; ne pas réessayer à l'identique."
+    return classify(signature).hint
 
 
 def is_expected_failure(p: ErrorPattern) -> bool:
     """Les tests rouges font partie du cycle normal (TDD) : on ne les traite pas comme irritants."""
-    return bool(_EXPECTED.search(p.signature) or _EXPECTED_CS.search(p.signature))
+    return classify(p.signature).id == "tests"
+
+
+def _short(signature: str, n: int = 90) -> str:
+    text = display(signature)
+    return text if len(text) <= n + 4 else text[: n + 1] + "… »"
 
 
 # ------------------------------------------------------------------- règles
@@ -179,7 +120,7 @@ def opportunities(a: Analysis, th: InsightThresholds | None = None) -> list[Oppo
                 id=_oid("err", p.signature, p.tool, p.target or ""),
                 category=category,
                 target=p.target or p.tool,
-                title=f"Échec récurrent de {what} : « {p.signature[:90]} »",
+                title=f"Échec récurrent de {what} : {_short(p.signature)}",
                 evidence=[
                     f"{p.occurrences} échecs dans {len(p.sessions)} sessions, {len(p.users)} personne(s)",
                     f"Dépôts : {', '.join(repos) or 'n/d'}",
@@ -472,9 +413,9 @@ def lessons(
         what = f"`{p.target}`" if p.target else f"l'outil `{p.tool}`"
         rec = p.top_recovery()
         if rec:
-            text = f"{what} échoue souvent (« {p.signature} ») : utiliser plutôt `{rec[0]}` (solution observée {rec[1]} fois)."
+            text = f"{what} échoue souvent ({display(p.signature)}) : utiliser plutôt `{rec[0]}` (solution observée {rec[1]} fois)."
         else:
-            text = f"{what} échoue souvent avec « {p.signature} ». {agent_hint(p.signature)}"
+            text = f"{what} échoue souvent ({display(p.signature)}). {agent_hint(p.signature)}"
         repos = list(p.repositories)
         scopes = [f"repo:{r}" for r in repos] if len(repos) == 1 else ["global"]
         for scope in scopes:

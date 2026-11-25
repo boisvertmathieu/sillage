@@ -57,6 +57,15 @@ _PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ),
     (re.compile(r"\b([a-z][a-z0-9+.-]*://)[^/\s:@]+:[^/\s@]+@"), r"\1[IDENTIFIANTS]@"),
     (re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"), "[COURRIEL]"),
+    # noms d'hôtes pleinement qualifiés (serveurs internes, bases de production...). Limité aux
+    # suffixes usuels pour ne pas toucher les noms de classes Java (org.postgresql.Driver).
+    (
+        re.compile(
+            r"(?i)\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
+            r"(?:ca|com|net|org|gouv|gov|local|lan|internal|intra|interne|corp|ad|cloud|io)\b(?![.(])"
+        ),
+        "[HOTE]",
+    ),
     (re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"), "[IP]"),
     (re.compile(r"(?i)/mnt/[a-z]/Users/[^/\s]+"), "~"),
     (re.compile(r"(?i)\b[A-Z]:\\Users\\[^\\\s]+"), "~"),
@@ -65,11 +74,27 @@ _PATTERNS: list[tuple[re.Pattern[str], str]] = [
 ]
 
 
-def redact(text: str | None, max_len: int = 300) -> str | None:
-    """Caviarde ``text`` et le tronque à ``max_len`` caractères."""
+def compile_patterns(patterns: list[str] | None) -> list[re.Pattern[str]]:
+    """Compile les motifs propres à l'organisation (noms d'instances, numéros de dossier, clients...)."""
+    out = []
+    for p in patterns or []:
+        try:
+            out.append(re.compile(p))
+        except re.error as exc:
+            raise ValueError(f"Motif de caviardage invalide {p!r} : {exc}") from exc
+    return out
+
+
+def redact(text: str | None, max_len: int = 300, extra: list[re.Pattern[str]] | None = None) -> str | None:
+    """Caviarde ``text`` et le tronque à ``max_len`` caractères.
+
+    ``extra`` : motifs propres à l'organisation, appliqués en premier, remplacés par ``[CONFIDENTIEL]``.
+    """
     if text is None:
         return None
     out = text
+    for pattern in extra or []:
+        out = pattern.sub("[CONFIDENTIEL]", out)
     for pattern, repl in _PATTERNS:
         out = pattern.sub(repl, out)
     out = _LUHN_CANDIDATE.sub(_replace_luhn, out)

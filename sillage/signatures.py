@@ -26,6 +26,8 @@ _SUBSTITUTIONS: list[tuple[re.Pattern[str], str]] = [
         ),
         "<secret>",
     ),
+    (re.compile(r"\[HOTE\]"), "<hote>"),
+    (re.compile(r"\[CONFIDENTIEL\]"), "<confidentiel>"),
     (re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.I), "<uuid>"),
     (re.compile(r"\b[0-9a-f]{12,}\b", re.I), "<hex>"),
     (re.compile(r"https?://[^\s'\"<>]+"), "<url>"),
@@ -51,11 +53,11 @@ def pick_error_line(text: str | None) -> str | None:
     return lines[-1]
 
 
-def signature(text: str | None, max_len: int = 140) -> str | None:
+def signature(text: str | None, max_len: int = 140, extra: list[re.Pattern[str]] | None = None) -> str | None:
     line = pick_error_line(text)
     if not line:
         return None
-    out = redact(line, max_len=500) or ""
+    out = redact(line, max_len=500, extra=extra) or ""
     for pattern, repl in _SUBSTITUTIONS:
         out = pattern.sub(repl, out)
     out = re.sub(r"\s+", " ", out).strip(" .:")

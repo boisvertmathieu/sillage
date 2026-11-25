@@ -13,6 +13,10 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 from sillage.normalize import FrictionWeights
+from sillage.redact import compile_patterns
+
+#: Niveaux d'export, du plus protecteur au plus détaillé.
+EXPORT_LEVELS = ("strict", "metrics", "redacted")
 
 SAMPLE_CONFIG = """\
 # Configuration Sillage — toutes les clés sont optionnelles.
@@ -20,8 +24,11 @@ SAMPLE_CONFIG = """\
 [sillage]
 # Niveau de confidentialité du magasin local : "redacted" (extraits caviardés) ou "metrics".
 local_privacy = "redacted"
-# Niveau par défaut des bundles exportés vers l'équipe : "metrics" recommandé.
-export_privacy = "metrics"
+# Niveau par défaut des bundles exportés vers l'équipe :
+#   "strict"   (défaut) : aucun texte issu des messages d'erreur ; seulement un type d'erreur et une empreinte ;
+#   "metrics"  : signatures d'erreurs normalisées et caviardées (plus parlantes, risque résiduel) ;
+#   "redacted" : en plus, courts extraits caviardés (déconseillé si les sessions touchent la production).
+export_privacy = "strict"
 # Variable d'environnement contenant un sel partagé par l'équipe (pseudonymes stables
 # d'une machine à l'autre). Sans sel partagé, un sel aléatoire local est utilisé.
 salt_env = "SILLAGE_SALT"
@@ -49,6 +56,13 @@ tool_definitions_share = 0.15
 # Motifs supplémentaires (regex, texte en minuscules sans accents) signalant une correction.
 extra_patterns = []
 
+[confidentialite]
+# Motifs (regex Python) propres à l'organisation, remplacés par [CONFIDENTIEL] à la collecte ET à
+# l'export : noms d'instances, de namespaces, formats de numéros de dossier ou de client, etc.
+# Exemples :
+#   motifs = ['\\bdpprod\\b', '\\bprod-[a-z0-9-]+\\b', '\\bDOS-\\d{6}\\b', '\\b[A-Z]{2,} [A-Z][a-z]+\\b']
+motifs = []
+
 [friction]
 # Poids du score de friction (total 100) et minutes perdues estimées par événement.
 # corrections = 15
@@ -71,12 +85,13 @@ class InsightThresholds:
 @dataclass
 class Config:
     local_privacy: str = "redacted"
-    export_privacy: str = "metrics"
+    export_privacy: str = "strict"
     salt_env: str = "SILLAGE_SALT"
     hash_repositories: bool = False
     k_anonymity: int = 2
     copilot_homes: list[str] = field(default_factory=list)
     extra_correction_patterns: list[str] = field(default_factory=list)
+    redaction_patterns: list[str] = field(default_factory=list)
     thresholds: InsightThresholds = field(default_factory=InsightThresholds)
     friction: FrictionWeights = field(default_factory=FrictionWeights)
     source: str | None = None
@@ -105,11 +120,14 @@ def load_config(path: str | None = None) -> Config:
             _apply(cfg.thresholds, data.get("insights", {}))
             _apply(cfg.friction, data.get("friction", {}))
             cfg.extra_correction_patterns = list(data.get("corrections", {}).get("extra_patterns", []))
+            cfg.redaction_patterns = list(data.get("confidentialite", {}).get("motifs", []))
             cfg.source = cand
             break
         if cand == path and path:
             raise FileNotFoundError(f"Fichier de configuration introuvable : {path}")
-    for level in (cfg.local_privacy, cfg.export_privacy):
-        if level not in ("metrics", "redacted"):
-            raise ValueError(f"Niveau de confidentialité invalide : {level!r} (metrics|redacted)")
+    if cfg.local_privacy not in ("metrics", "redacted"):
+        raise ValueError(f"Niveau de confidentialité local invalide : {cfg.local_privacy!r} (metrics|redacted)")
+    if cfg.export_privacy not in EXPORT_LEVELS:
+        raise ValueError(f"Niveau d'export invalide : {cfg.export_privacy!r} ({'|'.join(EXPORT_LEVELS)})")
+    compile_patterns(cfg.redaction_patterns)  # erreur claire si un motif est invalide
     return cfg

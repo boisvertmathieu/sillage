@@ -20,11 +20,12 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from sillage import RECORD_SCHEMA_VERSION, __version__
+from sillage.classify import strict_signature
 from sillage.config import Config
 from sillage.model import SessionRecord
 from sillage.normalize import normalize
 from sillage.reader import candidate_homes, read_sessions
-from sillage.redact import pseudonymize
+from sillage.redact import compile_patterns, pseudonymize, redact
 
 BUNDLE_MAGIC = "sillage-bundle"
 
@@ -110,6 +111,7 @@ class LocalStore:
                 privacy_level=cfg.local_privacy,
                 extra_correction_patterns=cfg.extra_correction_patterns,
                 weights=cfg.friction,
+                redaction_patterns=cfg.redaction_patterns,
             )
             records[rec.session_id] = rec
             index[str(raw.events_path)] = (raw.mtime, raw.size)
@@ -158,20 +160,70 @@ def filter_records(
 
 
 # ------------------------------------------------------------------ privacy
-def apply_privacy(rec: SessionRecord, level: str, salt: str, hash_repositories: bool = False) -> SessionRecord:
-    """Copie de ``rec`` prête à quitter la machine."""
+def _prefixed(value: str, fn) -> str:
+    """Applique ``fn`` à la partie signature d'une chaîne « préfixe: signature »."""
+    head, sep, tail = value.partition(": ")
+    return f"{head}{sep}{fn(tail)}" if sep else fn(value)
+
+
+def apply_privacy(
+    rec: SessionRecord,
+    level: str,
+    salt: str,
+    hash_repositories: bool = False,
+    redaction_patterns: list[str] | None = None,
+) -> SessionRecord:
+    """Copie de ``rec`` prête à quitter la machine.
+
+    * ``redacted`` : caviardage refait avec les motifs actuels de l'organisation ;
+    * ``metrics``  : en plus, aucun extrait ni commande complète ;
+    * ``strict``   : en plus, chaque signature d'erreur devient ``type#empreinte`` (aucun texte d'origine).
+    """
+    extra = compile_patterns(redaction_patterns)
+
+    def scrub(text: str | None) -> str | None:
+        # second passage : couvre les sessions collectées avant l'ajout d'un motif
+        return redact(text, 500, extra=extra) if text else text
+
+    if level == "strict":
+
+        def sig(text: str | None) -> str | None:
+            return strict_signature(scrub(text))
+    else:
+        sig = scrub
+
     out = SessionRecord.from_dict(rec.to_dict())
     out.session_id = pseudonymize("session:" + rec.session_id, salt, 16)
     if hash_repositories and out.repository:
         out.repository = "depot-" + pseudonymize("repo:" + out.repository, salt, 8)
-    if level == "metrics":
+    for t in out.tool_calls:
+        t.error_signature = sig(t.error_signature)
+        t.target = scrub(t.target)
+        t.recovered_by = scrub(t.recovered_by)
+        t.error_excerpt = scrub(t.error_excerpt)
+        t.command_excerpt = scrub(t.command_excerpt)
+        t.recovered_by_detail = scrub(t.recovered_by_detail)
+    for s in out.subagents:
+        s.error_signature = sig(s.error_signature)
+    for p in out.permissions:
+        p.target = scrub(p.target)
+    out.session_errors = [_prefixed(e, sig) for e in out.session_errors]
+    out.mcp_server_errors = [_prefixed(e, sig) for e in out.mcp_server_errors]
+    out.hook_failures = [_prefixed(e, sig) for e in out.hook_failures]
+    out.agent_definition_errors = [sig(e) or "" for e in out.agent_definition_errors]
+    for c in out.corrections:
+        c.excerpt = scrub(c.excerpt)
+    if level in ("metrics", "strict"):
         for t in out.tool_calls:
             t.error_excerpt = None
             t.command_excerpt = None
             t.recovered_by_detail = None
         for c in out.corrections:
             c.excerpt = None
-    out.privacy_level = "metrics" if level == "metrics" or rec.privacy_level == "metrics" else "redacted"
+    if level == "redacted" and rec.privacy_level == "redacted":
+        out.privacy_level = "redacted"
+    else:
+        out.privacy_level = "metrics" if level == "redacted" else level
     return out
 
 
@@ -190,7 +242,7 @@ def export_bundle(records: list[SessionRecord], path: Path, cfg: Config, level: 
     with gzip.open(path, "wt", encoding="utf-8") as fh:
         fh.write(json.dumps(manifest) + "\n")
         for rec in records:
-            out = apply_privacy(rec, level, salt, cfg.hash_repositories)
+            out = apply_privacy(rec, level, salt, cfg.hash_repositories, cfg.redaction_patterns)
             fh.write(json.dumps(out.to_dict(), ensure_ascii=False) + "\n")
     return len(records)
 

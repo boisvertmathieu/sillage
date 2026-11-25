@@ -42,9 +42,10 @@ sillage copilot-install
 
 ## 2. Collecte hebdomadaire (contributeur, automatique)
 
-`examples/collecte-equipe.sh` exécute `sillage collect` puis `sillage export --level metrics` vers
-`$SILLAGE_PARTAGE/<année-semaine>/<pseudonyme>.jsonl.gz`. Le bundle ne contient ni prompt, ni code, ni
-sortie brute ; chacun peut l'inspecter avec `zcat fichier.jsonl.gz | head`.
+`examples/collecte-equipe.sh` exécute `sillage collect` puis `sillage export` (niveau `strict` par défaut)
+vers `$SILLAGE_PARTAGE/<année-semaine>/<nom-aléatoire>.jsonl.gz`. Le bundle ne contient ni prompt, ni code,
+ni sortie brute, ni texte de message d'erreur. Avant d'activer la tâche, chaque participant lance une fois
+`sillage export --preview` pour voir tout le texte qui sortirait (voir [gouvernance.md](gouvernance.md)).
 
 **Planification recommandée : Planificateur de tâches Windows.** Le `cron` de WSL ne tourne que si WSL
 est démarré. Une tâche Windows hebdomadaire est plus fiable (remplacer le chemin du partage) :

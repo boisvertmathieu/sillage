@@ -12,8 +12,10 @@ Instructions pour les agents (Copilot CLI, etc.) qui contribuent à ce dépôt.
 ## Règles non négociables
 
 - **Aucune dépendance d'exécution** : bibliothèque standard Python 3.11+ uniquement.
-- **Confidentialité** : tout nouveau champ de `SessionRecord` contenant du texte libre doit être caviardé
-  (`redact`) et vidé par `apply_privacy` au niveau `metrics`, avec un test qui le prouve.
+- **Confidentialité** : tout nouveau champ de `SessionRecord` contenant du texte doit être caviardé
+  (`redact`, avec les motifs de l'organisation), retraité par `apply_privacy` (vidé au niveau `metrics`,
+  réduit à `type#empreinte` ou vidé au niveau `strict`), avec un test qui le prouve. Le niveau d'export
+  par défaut reste `strict`.
 - **Aucune vue par personne** : n'ajoutez jamais de tableau, tri ou export par utilisateur.
 - **Lecture tolérante** : un champ absent ou un type d'événement inconnu ne doit jamais lever d'exception.
 - Toute nouvelle règle d'opportunité : seuil dans `InsightThresholds`, preuves chiffrées, champ `where`,

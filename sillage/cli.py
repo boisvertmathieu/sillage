@@ -14,7 +14,7 @@ from pathlib import Path
 
 from sillage import __version__
 from sillage.analyze import analyze
-from sillage.config import SAMPLE_CONFIG, Config, load_config
+from sillage.config import EXPORT_LEVELS, SAMPLE_CONFIG, Config, load_config
 from sillage.insights import lessons, opportunities, render_lessons_block, write_lessons_block
 from sillage.model import SessionRecord
 from sillage.reader import candidate_homes, iter_session_files, load_events
@@ -131,13 +131,92 @@ def cmd_lessons(args: argparse.Namespace, cfg: Config) -> int:
     return 0
 
 
+def inspect_records(records: list[SessionRecord]) -> str:
+    """Toutes les valeurs textuelles distinctes présentes dans des enregistrements : ce qui quitte le poste."""
+    groups: dict[str, Counter] = {
+        k: Counter()
+        for k in (
+            "Dépôts",
+            "Skills",
+            "Agents",
+            "Serveurs MCP",
+            "Outils",
+            "Commandes et cibles",
+            "Contournements",
+            "Signatures d'erreurs",
+            "Erreurs de session, MCP, hooks, agents",
+            "Extraits caviardés",
+            "Modèles",
+        )
+    }
+    for r in records:
+        if r.repository:
+            groups["Dépôts"][r.repository] += 1
+        groups["Skills"].update(s.name for s in r.skills_invoked)
+        groups["Skills"].update(r.skills_available)
+        groups["Agents"].update(r.custom_agents + [s.name for s in r.subagents])
+        groups["Serveurs MCP"].update(list(r.mcp_servers))
+        groups["Modèles"].update(list(r.models))
+        for t in r.tool_calls:
+            groups["Outils"][t.name] += 1
+            for v in (t.target, t.recovered_by):
+                if v:
+                    groups["Commandes et cibles"][v] += 1
+            if t.recovered_by_detail:
+                groups["Contournements"][t.recovered_by_detail] += 1
+            if t.error_signature:
+                groups["Signatures d'erreurs"][t.error_signature] += 1
+            for v in (t.error_excerpt, t.command_excerpt):
+                if v:
+                    groups["Extraits caviardés"][v] += 1
+        for p in r.permissions:
+            if p.target:
+                groups["Commandes et cibles"][p.target] += 1
+        for s in r.subagents:
+            if s.error_signature:
+                groups["Signatures d'erreurs"][s.error_signature] += 1
+        groups["Erreurs de session, MCP, hooks, agents"].update(
+            r.session_errors + r.mcp_server_errors + r.hook_failures + r.agent_definition_errors
+        )
+        groups["Extraits caviardés"].update(c.excerpt for c in r.corrections if c.excerpt)
+    levels = Counter(r.privacy_level for r in records)
+    lines = [
+        f"# Contenu textuel de {len(records)} session(s) — niveau(x) : "
+        + ", ".join(f"{k} ({v})" for k, v in levels.items()),
+        "",
+        "Tout ce qui suit quitte le poste avec le bundle. Le reste n'est que des nombres et des dates.",
+        "Si une valeur révèle une donnée confidentielle, ajoutez un motif dans [confidentialite] de sillage.toml.",
+    ]
+    for title, counter in groups.items():
+        if not counter:
+            continue
+        lines += ["", f"## {title} ({len(counter)})"]
+        lines += [f"  {n:>5} × {value}" for value, n in counter.most_common()]
+    return "\n".join(lines) + "\n"
+
+
+def cmd_inspect(args: argparse.Namespace, cfg: Config) -> int:
+    _emit(inspect_records(load_bundles(Path(p) for p in args.bundles)), args.output)
+    return 0
+
+
 def cmd_export(args: argparse.Namespace, cfg: Config) -> int:
     recs = _records(args, cfg)
+    if args.preview:
+        from sillage.store import apply_privacy, get_salt
+
+        level = args.level or cfg.export_privacy
+        salt = get_salt(cfg)
+        preview = [apply_privacy(r, level, salt, cfg.hash_repositories, cfg.redaction_patterns) for r in recs]
+        _emit(inspect_records(preview), None)
+        return 0
+    if not args.output:
+        raise ValueError("Préciser -o FICHIER (ou --preview pour voir le contenu sans écrire)")
     n = export_bundle(recs, Path(args.output), cfg, args.level)
     print(f"Bundle écrit : {args.output} ({n} sessions, niveau « {args.level or cfg.export_privacy} »)")
     print(
-        "Contenu : compteurs, noms d'outils/skills/agents, signatures d'erreurs caviardées. "
-        "Aucun prompt, code ou sortie brute."
+        "Contenu : compteurs, noms d'outils/skills/agents et types d'erreurs. Aucun prompt, code ou sortie brute. "
+        f"Vérifier : sillage inspect {args.output}"
     )
     return 0
 
@@ -215,6 +294,7 @@ def cmd_demo(args: argparse.Namespace, cfg: Config) -> int:
                         user_identity=ident,
                         privacy_level="redacted",
                         extra_correction_patterns=cfg.extra_correction_patterns,
+                        redaction_patterns=cfg.redaction_patterns,
                         weights=cfg.friction,
                     )
                 )
@@ -365,8 +445,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("export", help="bundle anonymisé partageable avec l'équipe")
     data_opts(sp)
-    sp.add_argument("--level", choices=["metrics", "redacted"], help="niveau de confidentialité (défaut : config)")
+    sp.add_argument(
+        "--level", choices=list(EXPORT_LEVELS), help="niveau de confidentialité (défaut : config, « strict »)"
+    )
+    sp.add_argument("--preview", action="store_true", help="afficher tout le texte qui sortirait, sans rien écrire")
     sp.set_defaults(func=cmd_export)
+
+    sp = sub.add_parser("inspect", help="lister tout le texte contenu dans un ou des bundles (revue avant partage)")
+    sp.add_argument("bundles", nargs="+")
+    sp.add_argument("-o", "--output")
+    sp.set_defaults(func=cmd_inspect)
 
     sp = sub.add_parser("doctor", help="diagnostic : sessions trouvées, versions, dérive de format")
     sp.add_argument("--copilot-home", action="append")

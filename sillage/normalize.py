@@ -26,7 +26,7 @@ from sillage.model import (
     ToolCall,
 )
 from sillage.reader import RawSession
-from sillage.redact import pseudonymize, redact
+from sillage.redact import compile_patterns, pseudonymize, redact
 from sillage.signatures import command_identifiers, exit_code, primary_command, signature
 
 KNOWN_EVENT_TYPES = {
@@ -338,12 +338,21 @@ def normalize(
     privacy_level: str = "metrics",
     extra_correction_patterns: list[str] | None = None,
     weights: FrictionWeights | None = None,
+    redaction_patterns: list[str] | None = None,
 ) -> SessionRecord:
     """Construit le :class:`SessionRecord` d'une session.
 
     ``privacy_level`` : ``metrics`` (aucun texte libre) ou ``redacted`` (extraits caviardés).
     """
     keep_text = privacy_level == "redacted"
+    extra = compile_patterns(redaction_patterns)
+
+    def sig(text: str | None) -> str | None:
+        return signature(text, extra=extra)
+
+    def red(text: str | None, n: int) -> str | None:
+        return redact(text, n, extra=extra)
+
     rec = SessionRecord(
         session_id=raw.session_id,
         user=pseudonymize(user_identity or default_user_identity(), salt),
@@ -400,7 +409,7 @@ def normalize(
                     Correction(
                         "correction",
                         after_skill=None if pending_denial else current_skill,
-                        excerpt=redact(content, 200) if keep_text else None,
+                        excerpt=red(content, 200) if keep_text else None,
                     )
                 )
             elif (
@@ -410,7 +419,7 @@ def normalize(
             ):
                 rec.corrections.append(
                     Correction(
-                        "reformulation", after_skill=current_skill, excerpt=redact(content, 200) if keep_text else None
+                        "reformulation", after_skill=current_skill, excerpt=red(content, 200) if keep_text else None
                     )
                 )
             last_user_msg = content
@@ -447,9 +456,9 @@ def normalize(
             last_meaningful = ("abort", True)
 
         elif etype == "session.error":
-            sig = signature(data.get("message")) or "erreur"
+            err_sig = sig(data.get("message")) or "erreur"
             code = data.get("statusCode")
-            rec.session_errors.append(f"{data.get('errorType') or 'error'}{f' {code}' if code else ''}: {sig}")
+            rec.session_errors.append(f"{data.get('errorType') or 'error'}{f' {code}' if code else ''}: {err_sig}")
             last_meaningful = ("session.error", True)
 
         elif etype == "tool.execution_start":
@@ -466,7 +475,7 @@ def normalize(
             )
             if cat == "shell" and keep_text and isinstance(data.get("arguments"), dict):
                 cmd = data["arguments"].get("command")
-                call.command_excerpt = redact(cmd, 160) if isinstance(cmd, str) else None
+                call.command_excerpt = red(cmd, 160) if isinstance(cmd, str) else None
             tools[cid] = call
             if ts:
                 tool_start_ts[cid] = ts
@@ -497,9 +506,9 @@ def normalize(
                 else:
                     call.success = True if success is not None or code == 0 else None
             if call.success is False:
-                call.error_signature = signature(text) or "échec sans message"
+                call.error_signature = sig(text) or "échec sans message"
                 if keep_text:
-                    call.error_excerpt = redact(text, 300)
+                    call.error_excerpt = red(text, 300)
             if cid and cid in shell_ids_by_call and call.category == "shell":
                 ids = [i for i in shell_ids_by_call[cid] if i.split(" ")[0] not in {"cd", "echo"}]
                 call.target = ids[0] if ids else call.target
@@ -555,9 +564,7 @@ def normalize(
             rec.custom_agents = sorted(
                 {a.get("name") or a.get("id") for a in data.get("agents") or [] if isinstance(a, dict)} - {None}
             )
-            rec.agent_definition_errors = [
-                signature(e) or "erreur" for e in data.get("errors") or [] if isinstance(e, str)
-            ]
+            rec.agent_definition_errors = [sig(e) or "erreur" for e in data.get("errors") or [] if isinstance(e, str)]
 
         elif etype == "subagent.selected":
             rec.selected_agent = data.get("agentName")
@@ -577,20 +584,20 @@ def normalize(
             run.total_tokens = data.get("totalTokens")
             run.total_tool_calls = data.get("totalToolCalls")
             if etype == "subagent.failed":
-                run.error_signature = signature(str(data.get("error") or "")) or "échec"
+                run.error_signature = sig(str(data.get("error") or "")) or "échec"
 
         elif etype == "session.mcp_servers_loaded":
             for s in data.get("servers") or []:
                 if isinstance(s, dict) and s.get("name"):
                     rec.mcp_servers[s["name"]] = s.get("status") or "?"
                     if s.get("error"):
-                        rec.mcp_server_errors.append(f"{s['name']}: {signature(s['error']) or 'erreur'}")
+                        rec.mcp_server_errors.append(f"{s['name']}: {sig(s['error']) or 'erreur'}")
 
         elif etype == "session.mcp_server_status_changed":
             name = data.get("serverName") or "?"
             rec.mcp_servers[name] = data.get("status") or "?"
             if data.get("error"):
-                rec.mcp_server_errors.append(f"{name}: {signature(data['error']) or 'erreur'}")
+                rec.mcp_server_errors.append(f"{name}: {sig(data['error']) or 'erreur'}")
 
         elif etype == "permission.requested":
             req = data.get("permissionRequest") if isinstance(data.get("permissionRequest"), dict) else {}
@@ -633,9 +640,7 @@ def normalize(
         elif etype == "hook.end":
             if data.get("success") is False:
                 err = data.get("error") if isinstance(data.get("error"), dict) else {}
-                rec.hook_failures.append(
-                    f"{data.get('hookType') or 'hook'}: {signature(err.get('message')) or 'échec'}"
-                )
+                rec.hook_failures.append(f"{data.get('hookType') or 'hook'}: {sig(err.get('message')) or 'échec'}")
 
         elif etype == "session.compaction_complete":
             rec.compactions += 1

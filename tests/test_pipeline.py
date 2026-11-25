@@ -287,3 +287,89 @@ def test_policy_disabled_mcp_is_not_an_outage(events):
 def test_example_scripts_are_valid_bash():
     for script in (Path(__file__).resolve().parents[1] / "examples").glob("*.sh"):
         assert subprocess.run(["bash", "-n", str(script)], capture_output=True).returncode == 0, script
+
+
+# ------------------------------------------- données confidentielles / production
+def test_hostnames_redacted_but_java_classes_kept():
+    from sillage.redact import redact
+
+    out = redact("connect to db-prod-01.interne.example.qc.ca failed at org.postgresql.Driver.connect(Driver.java:12)")
+    assert "db-prod-01" not in out and "[HOTE]" in out
+    assert "org.postgresql.Driver.connect" in out
+
+
+def test_org_patterns_applied_at_export_even_for_old_records(tmp_path, events):
+    from sillage.normalize import normalize
+
+    events.add("session.start", {"context": {"repository": "dp/app"}})
+    events.add("assistant.message", {"content": "ok"})
+    events.add("tool.execution_start", {"toolCallId": "c", "toolName": "bash", "arguments": {"command": "psql"}})
+    events.add(
+        "tool.execution_complete",
+        {"toolCallId": "c", "success": False, "error": {"message": "Client TREMBLAY Jean introuvable sur dpprod"}},
+    )
+    rec = normalize(events.raw(), salt="s", user_identity="u")  # collecté AVANT l'ajout des motifs
+    assert "TREMBLAY" in rec.tool_calls[0].error_signature
+    cfg = Config(redaction_patterns=[r"\bdpprod\b", r"\b[A-Z]{2,} [A-Z][a-z]+\b"])
+    path = tmp_path / "b.jsonl.gz"
+    export_bundle([rec], path, cfg, "metrics")
+    with gzip.open(path, "rt") as fh:
+        raw = fh.read()
+    assert "TREMBLAY" not in raw and "dpprod" not in raw
+    assert "confidentiel" in raw.lower()
+
+
+def test_strict_export_keeps_no_error_text_but_keeps_lessons(tmp_path, demo_records):
+    from sillage.analyze import analyze
+    from sillage.classify import is_strict
+
+    cfg = Config()
+    assert cfg.export_privacy == "strict"
+    path = tmp_path / "strict.jsonl.gz"
+    export_bundle(demo_records, path, cfg)
+    with gzip.open(path, "rt") as fh:
+        raw = fh.read()
+    for leaked in ("Missing script", "PKIX", "OAuth token", "dpprod", "jq: not found", "settings-dp.xml"):
+        assert leaked not in raw, leaked
+    back = load_bundles([path])
+    sigs = [t.error_signature for r in back for t in r.tool_calls if t.error_signature]
+    assert sigs and all(is_strict(s) for s in sigs)
+    a = analyze(back)
+    titles = " | ".join(o.title for o in opportunities(a))
+    assert "npm test" in titles and "mvn test" in titles and "aq-tests" in titles
+    text = " ".join(lsn.text for lsn in lessons(a, repository="dp/portail-citoyen"))
+    assert "npm run test:unit" in text and "script introuvable" in text
+    # même erreur sur deux postes => même empreinte (regroupement possible sans le texte)
+    path2 = tmp_path / "strict2.jsonl.gz"
+    export_bundle(demo_records[:30], path2, cfg)
+    sigs2 = {t.error_signature for r in load_bundles([path2]) for t in r.tool_calls if t.error_signature}
+    assert sigs2 <= set(sigs)
+
+
+def test_inspect_and_preview(tmp_path, demo_homes, capsys):
+    homes = [a for h in list(demo_homes.values())[:2] for a in ("--copilot-home", str(h))]
+    assert main(["collect", *homes]) == 0
+    capsys.readouterr()
+    assert main(["export", "--no-collect", "--preview"]) == 0
+    preview = capsys.readouterr().out
+    assert "Signatures d'erreurs" in preview and "#" in preview and "Missing script" not in preview
+    assert not list(tmp_path.glob("*.jsonl.gz"))
+    assert main(["export", "--no-collect", "--level", "metrics", "-o", str(tmp_path / "m.jsonl.gz")]) == 0
+    capsys.readouterr()
+    assert main(["inspect", str(tmp_path / "m.jsonl.gz")]) == 0
+    out = capsys.readouterr().out
+    assert "Missing script" in out and "## Commandes et cibles" in out
+    assert "connectedconnected" not in out
+    assert main(["export", "--no-collect"]) == 1  # ni -o ni --preview
+
+
+def test_invalid_redaction_pattern_is_rejected(tmp_path):
+    f = tmp_path / "sillage.toml"
+    f.write_text("[confidentialite]\nmotifs = ['(non ferme']\n")
+    with pytest.raises(ValueError):
+        load_config(str(f))
+
+
+def test_collect_script_filename_does_not_derive_from_username():
+    script = (Path(__file__).resolve().parents[1] / "examples" / "collecte-equipe.sh").read_text()
+    assert "whoami" not in script and "/dev/urandom" in script

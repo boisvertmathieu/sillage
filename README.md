@@ -71,7 +71,8 @@ Sous WSL, Sillage lit `~/.copilot` **et** les sessions lancées côté Windows (
 | `sillage report` | Rapport `md` (défaut), `html` (tableau de bord autonome) ou `json`. |
 | `sillage opportunities` | Opportunités priorisées : preuves, action proposée, où corriger. `--category`, `--format json`. |
 | `sillage lessons` | Leçons apprises ; `--repo`, `--skill`, `--write AGENTS.md`, `--format agents-md`. |
-| `sillage export` | Bundle `.jsonl.gz` anonymisé à partager (niveau `metrics` par défaut). |
+| `sillage export` | Bundle `.jsonl.gz` pseudonymisé à partager (niveau `strict` par défaut) ; `--preview` montre tout le texte qui sortirait. |
+| `sillage inspect <bundle>` | Liste tout le texte contenu dans un bundle, pour revue avant ou après dépôt. |
 | `sillage report --bundle-dir <dossier>` | Vue d'équipe à partir des bundles déposés dans un dossier partagé. |
 | `sillage copilot-install` | Installe l'agent `sillage-coach` et le skill `sillage-amelioration` dans `~/.copilot`. |
 | `sillage mcp` | *Optionnel* : serveur MCP stdio en lecture seule, si la politique de l'organisation autorise les MCP tiers. |
@@ -120,14 +121,18 @@ sillage copilot-install
 
 ## Confidentialité et éthique (résumé)
 
-* **Rien ne quitte le poste** sans `sillage export` explicite.
+* **Rien ne quitte le poste** sans `sillage export` (ou la tâche planifiée que la personne a créée).
 * Le magasin local ne contient **jamais** les journaux bruts : seulement compteurs, noms d'outils/skills,
-  signatures d'erreurs normalisées et (niveau `redacted`) de courts extraits **caviardés** (jetons, courriels,
-  IP, NAS, cartes, chemins personnels...).
-* Les bundles partagés sont au niveau `metrics` par défaut : **aucun texte libre**, identifiants re-pseudonymisés.
-* **Aucun classement individuel**, k-anonymat sur les extraits dans les rapports d'équipe.
+  signatures d'erreurs caviardées et, au niveau local `redacted`, de courts extraits **caviardés**.
+* Export **`strict` par défaut** : aucun mot issu d'un message d'erreur ne sort, seulement un type d'erreur
+  et une empreinte (`reseau#9f3a1c2e`). Niveaux `metrics` et `redacted` sur décision explicite.
+* Caviardage intégré (jetons, mots de passe, courriels, IP, noms d'hôtes, NAS, cartes...) **plus** motifs
+  propres à l'organisation (`[confidentialite]` dans `sillage.toml`), réappliqués à chaque export.
+* `sillage export --preview` et `sillage inspect <bundle>` affichent **tout le texte** qui sort.
+* **Aucun classement individuel**, k-anonymat sur les extraits, nom de fichier de bundle aléatoire.
 
-Charte complète : [docs/gouvernance.md](docs/gouvernance.md).
+Charte complète, risques résiduels et procédure pour les sessions qui touchent la production :
+[docs/gouvernance.md](docs/gouvernance.md).
 
 ## Compatibilité
 
