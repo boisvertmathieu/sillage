@@ -336,8 +336,8 @@ def opportunities(a: Analysis, th: InsightThresholds | None = None) -> list[Oppo
                     target=p["target"],
                     title=f"`{p['target']}` est approuvé manuellement à répétition",
                     evidence=[f"{p['approved_once']} approbations ponctuelles, 0 refus, {p['users']} personne(s)"],
-                    action="Si la commande est en lecture seule, l'autoriser par défaut (ex. `--allow-tool 'shell("
-                    f"{p['target'].split(' ')[0]})'`) dans le profil d'équipe : moins d'interruptions.",
+                    action="Si la commande est en lecture seule, l'autoriser par défaut dans le profil d'équipe "
+                    f"(`copilot --allow-tool='shell({p['target']})'`) : moins d'interruptions.",
                     where="profil de permissions partagé (alias / script de lancement Copilot)",
                     sessions=p["sessions"],
                     users=p["users"],

@@ -9,21 +9,26 @@ description: >-
 
 # Sillage — analyser et améliorer à partir des sessions Copilot
 
+Sillage est une ligne de commande (aucun serveur MCP requis). Exécute-la avec l'outil shell.
+Ajoute `--bundle-dir <dossier>` pour travailler sur les données de l'équipe (bundles partagés) plutôt
+que sur les sessions locales de la personne.
+
 ## Commandes
 
 | Besoin | Commande |
 |---|---|
-| Mettre à jour les données (incrémental) | `sillage collect` |
+| Mettre à jour les données locales (incrémental) | `sillage collect` |
 | Vérifier l'installation et le format | `sillage doctor` |
 | Rapport (Markdown / HTML) | `sillage report --since 30d` · `sillage report --format html -o rapport.html` |
 | Opportunités priorisées | `sillage opportunities --limit 10` (`--format json` pour un traitement) |
 | Leçons d'un dépôt | `sillage lessons --repo <owner/nom>` |
 | Injecter les leçons dans AGENTS.md | `sillage lessons --repo <owner/nom> --write AGENTS.md` |
-| Partager avec l'équipe (anonymisé) | `sillage export -o moi.jsonl.gz` puis `sillage report --bundle *.jsonl.gz` |
+| Vue d'équipe | ajouter `--bundle-dir <dossier des bundles>` à report / opportunities / lessons |
+| Partager ses données (anonymisées) | `sillage export -o <dossier>/moi.jsonl.gz` |
 
 ## Procédure
 
-1. Lance `sillage collect` puis `sillage report --since 30d`.
+1. Lance `sillage report --since 30d` (ou avec `--bundle-dir` pour l'équipe).
 2. Résume en 5 lignes : volumes, part de sessions fluides, 3 premières opportunités.
 3. Pour chaque opportunité retenue, indique **où** corriger et **quoi** changer, en citant les preuves
    chiffrées (ne jamais inventer de chiffres : tout vient de la sortie de Sillage).

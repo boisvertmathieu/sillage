@@ -1,5 +1,8 @@
 ## Mémoire collective (Sillage)
 
-Au début de chaque tâche dans ce dépôt, appelle l'outil MCP `sillage_lessons` avec le dépôt courant
-(format `owner/nom`) et, si tu utilises un skill, son nom. Tiens compte des leçons retournées
-(commandes exactes, erreurs connues, actions refusées par l'équipe) avant d'agir.
+La section « Leçons apprises des sessions Copilot » de ce fichier est générée par Sillage à partir des
+sessions de l'équipe : commandes exactes, erreurs connues et leur contournement, actions refusées par
+l'équipe. Lis-la avant d'agir et applique-la en priorité sur tes habitudes.
+
+Si l'outil `sillage` est installé, tu peux obtenir des leçons plus récentes avec la commande shell
+`sillage lessons --no-collect --repo <owner/nom>` (lecture seule).

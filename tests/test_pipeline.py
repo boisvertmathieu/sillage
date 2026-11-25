@@ -239,3 +239,51 @@ def test_doctor_without_sessions():
 def test_empty_store_reports_gracefully(capsys):
     assert main(["report"]) == 0
     assert "Aucune session" in capsys.readouterr().out
+
+
+# --------------------------------------------------- organisation sans MCP
+def test_bundle_dir_feeds_team_lessons(tmp_path, demo_records, capsys):
+    share = tmp_path / "partage" / "2026-S48"
+    share.mkdir(parents=True)
+    users = sorted({r.user for r in demo_records})
+    for i, u in enumerate(users[:3]):
+        export_bundle([r for r in demo_records if r.user == u], share / f"p{i}.jsonl.gz", Config(), "metrics")
+    out = tmp_path / "AGENTS.md"
+    args = ["lessons", "--bundle-dir", str(tmp_path / "partage"), "--repo", "dp/portail-citoyen", "--write", str(out)]
+    assert main(args) == 0
+    assert "npm run test:unit" in out.read_text()
+    capsys.readouterr()
+    assert main(["opportunities", "--bundle-dir", str(tmp_path / "partage"), "--format", "json"]) == 0
+    assert json.loads(capsys.readouterr().out)
+    assert main(["report", "--bundle-dir", str(tmp_path / "vide-inexistant")]) == 1
+
+
+def test_copilot_install_without_mcp_writes_no_mcp_config(tmp_path, capsys):
+    target = tmp_path / ".copilot"
+    assert main(["copilot-install", "--target", str(target)]) == 0
+    printed = capsys.readouterr().out
+    assert not (target / "mcp-config.json").exists()
+    assert "shell(sillage:*)" in printed and "AGENTS.md" in printed
+    agent = (target / "agents" / "sillage-coach.agent.md").read_text()
+    assert "sillage opportunities" in agent and "sans serveur MCP" in agent
+
+
+def test_policy_disabled_mcp_is_not_an_outage(events):
+    from sillage.analyze import analyze
+    from sillage.normalize import normalize
+
+    recs = []
+    for i in range(5):
+        events.events.clear()
+        events.add("session.start", {"context": {"repository": "dp/app"}})
+        events.add("session.mcp_servers_loaded", {"servers": [{"name": "splunk", "status": "disabled"}]})
+        recs.append(normalize(events.raw(f"s{i}"), salt="s", user_identity=f"u{i}"))
+    a = analyze(recs)
+    row = next(m for m in a.mcp if m["server"] == "splunk")
+    assert row["disabled_sessions"] == 5 and row["failed_status_sessions"] == 0
+    assert not [o for o in opportunities(a) if o.category == "mcp"]
+
+
+def test_example_scripts_are_valid_bash():
+    for script in (Path(__file__).resolve().parents[1] / "examples").glob("*.sh"):
+        assert subprocess.run(["bash", "-n", str(script)], capture_output=True).returncode == 0, script

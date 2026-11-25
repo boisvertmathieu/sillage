@@ -195,6 +195,14 @@ def export_bundle(records: list[SessionRecord], path: Path, cfg: Config, level: 
     return len(records)
 
 
+def find_bundles(directory: Path) -> list[Path]:
+    """Tous les bundles d'un dossier (récursif) — utile quand les jokers ne sont pas interprétés
+    (fichiers de configuration, tâches planifiées, instructions d'agents)."""
+    if not directory.is_dir():
+        raise ValueError(f"Dossier de bundles introuvable : {directory}")
+    return sorted(p for p in directory.rglob("*.jsonl*") if p.is_file() and p.name.endswith((".jsonl", ".jsonl.gz")))
+
+
 def load_bundles(paths: Iterable[Path]) -> list[SessionRecord]:
     """Fusionne des bundles (dédoublonnage par identifiant de session pseudonymisé)."""
     merged: dict[str, SessionRecord] = {}

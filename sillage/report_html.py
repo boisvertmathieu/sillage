@@ -318,7 +318,7 @@ def render_html(
         ],
     )
     mcp_table = _table(
-        ["Serveur", "Chargé", "Utilisé", "Appels", "Échecs", "Erreurs démarrage"],
+        ["Serveur", "Chargé", "Utilisé", "Appels", "Échecs", "Erreurs démarrage", "Désactivé"],
         [
             [
                 E(m["server"]),
@@ -327,6 +327,7 @@ def render_html(
                 m["calls"],
                 _pct(m["failure_rate"]),
                 m["startup_errors"],
+                m.get("disabled_sessions", 0),
             ]
             for m in a.mcp
         ],

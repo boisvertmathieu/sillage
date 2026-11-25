@@ -201,6 +201,8 @@ def analyze(records: list[SessionRecord], k_anonymity: int = 2) -> Analysis:
                 "startup_errors": len(startup_errors),
                 "top_startup_error": Counter(startup_errors).most_common(1)[0][0] if startup_errors else None,
                 "failed_status_sessions": sum(1 for r in loaded if r.mcp_servers.get(s) in {"failed", "error"}),
+                # « disabled » = désactivé (souvent par la politique Copilot de l'organisation) : pas une panne
+                "disabled_sessions": sum(1 for r in loaded if r.mcp_servers.get(s) == "disabled"),
             }
         )
     a.mcp = sorted(rows, key=lambda d: (-d["calls"], -d["sessions_loaded"]))

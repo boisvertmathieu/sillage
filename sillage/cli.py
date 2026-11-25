@@ -20,7 +20,15 @@ from sillage.model import SessionRecord
 from sillage.reader import candidate_homes, iter_session_files, load_events
 from sillage.report_html import render_html
 from sillage.report_md import render_lessons, render_opportunities, render_report
-from sillage.store import LocalStore, data_dir, export_bundle, filter_records, load_bundles, parse_since
+from sillage.store import (
+    LocalStore,
+    data_dir,
+    export_bundle,
+    filter_records,
+    find_bundles,
+    load_bundles,
+    parse_since,
+)
 
 
 # ------------------------------------------------------------------ helpers
@@ -34,8 +42,14 @@ def _emit(text: str, output: str | None) -> None:
 
 
 def _records(args: argparse.Namespace, cfg: Config) -> list[SessionRecord]:
-    if getattr(args, "bundle", None):
-        recs = load_bundles(Path(p) for p in args.bundle)
+    bundles = [Path(p) for p in (getattr(args, "bundle", None) or [])]
+    for d in getattr(args, "bundle_dir", None) or []:
+        found = find_bundles(Path(os.path.expanduser(d)))
+        if not found:
+            raise ValueError(f"Aucun bundle (*.jsonl.gz) dans {d}")
+        bundles.extend(found)
+    if bundles:
+        recs = load_bundles(bundles)
     else:
         store = LocalStore()
         if not getattr(args, "no_collect", False):
@@ -138,6 +152,7 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
     total = 0
     versions: Counter = Counter()
     types: Counter = Counter()
+    mcp_disabled: set[str] = set()
     bad = 0
     for home in homes:
         files = list(iter_session_files([home]))
@@ -149,8 +164,13 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
             bad += b
             for ev in events:
                 types[ev.get("type")] += 1
+                data = ev.get("data") if isinstance(ev.get("data"), dict) else {}
                 if ev.get("type") == "session.start":
-                    versions[(ev.get("data") or {}).get("copilotVersion")] += 1
+                    versions[data.get("copilotVersion")] += 1
+                elif ev.get("type") == "session.mcp_servers_loaded":
+                    for srv in data.get("servers") or []:
+                        if isinstance(srv, dict) and srv.get("status") == "disabled":
+                            mcp_disabled.add(str(srv.get("name")))
     from sillage.normalize import KNOWN_EVENT_TYPES
 
     unknown = sorted(t for t in types if t not in KNOWN_EVENT_TYPES)
@@ -161,6 +181,11 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
         print(f"⚠ Types d'événements inconnus : {', '.join(unknown)} — Sillage les ignore ; mettre à jour Sillage.")
     if bad:
         print(f"Lignes illisibles dans l'échantillon : {bad}")
+    if mcp_disabled:
+        print(
+            f"Serveurs MCP désactivés (politique de l'organisation probable) : {', '.join(sorted(mcp_disabled))}. "
+            "Sillage fonctionne sans MCP : les leçons passent par AGENTS.md."
+        )
     if total == 0:
         print(
             "Aucune session : vérifiez COPILOT_HOME, ou utilisez --copilot-home. "
@@ -261,6 +286,12 @@ def cmd_copilot_install(args: argparse.Namespace, cfg: Config) -> int:
                 copied.append(str(dest))
     for c in copied:
         print(f"Installé : {c}")
+    print(
+        "\nMode par défaut (sans MCP) : les leçons arrivent aux agents par le bloc Sillage d'AGENTS.md "
+        "(voir `sillage lessons --write` et examples/publier-lecons.sh).\n"
+        "Pour que l'agent coach et le skill appellent `sillage` sans demande d'autorisation :\n"
+        "  copilot --allow-tool='shell(sillage:*)'"
+    )
     server = {"type": "local", "command": shutil.which("sillage") or "sillage", "args": ["mcp"], "tools": ["*"]}
     if args.mcp:
         cfg_path = target / "mcp-config.json"
@@ -272,10 +303,9 @@ def cmd_copilot_install(args: argparse.Namespace, cfg: Config) -> int:
         print(f"Serveur MCP « sillage » ajouté à {cfg_path} (sauvegarde : mcp-config.json.bak)")
     else:
         print(
-            "\nPour activer la mémoire collective dans Copilot CLI, ajoutez à ~/.copilot/mcp-config.json "
-            "(ou relancez avec --mcp) :"
+            "\nOptionnel — seulement si votre organisation autorise les serveurs MCP tiers dans Copilot : "
+            "relancez avec --mcp pour ajouter le serveur « sillage » (mémoire collective en direct)."
         )
-        print(json.dumps({"mcpServers": {"sillage": server}}, indent=2))
     snippet = (assets / "instructions-snippet.md").read_text(encoding="utf-8")
     print("\nExtrait à ajouter aux instructions de vos dépôts (AGENTS.md) :\n")
     print(snippet)
@@ -296,6 +326,11 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--since", help="période : 30d, 12w, 48h ou date ISO")
         sp.add_argument("--repo", help="filtrer sur un dépôt (owner/nom)")
         sp.add_argument("--bundle", nargs="+", help="utiliser des bundles d'équipe au lieu du magasin local")
+        sp.add_argument(
+            "--bundle-dir",
+            action="append",
+            help="dossier de bundles d'équipe (récursif, répétable), ex. partage réseau",
+        )
         sp.add_argument("--copilot-home", action="append", help="répertoire .copilot (répétable)")
         sp.add_argument("--no-collect", action="store_true", help="ne pas rafraîchir le magasin avant l'analyse")
         sp.add_argument("-o", "--output", help="fichier de sortie (sinon : sortie standard)")
@@ -343,10 +378,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--seed", type=int, default=7)
     sp.set_defaults(func=cmd_demo)
 
-    sp = sub.add_parser("mcp", help="serveur MCP stdio (mémoire collective pour les agents)")
+    sp = sub.add_parser("mcp", help="serveur MCP stdio, optionnel (si l'organisation autorise les serveurs MCP tiers)")
     sp.add_argument("--since")
     sp.add_argument("--repo")
     sp.add_argument("--bundle", nargs="+")
+    sp.add_argument("--bundle-dir", action="append")
     sp.add_argument("--copilot-home", action="append")
     sp.add_argument("--no-collect", action="store_true")
     sp.set_defaults(func=cmd_mcp)
@@ -358,7 +394,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("copilot-install", help="installer l'agent coach et le skill dans ~/.copilot")
     sp.add_argument("--target", default=os.environ.get("COPILOT_HOME", "~/.copilot"))
-    sp.add_argument("--mcp", action="store_true", help="ajouter le serveur MCP à mcp-config.json (avec sauvegarde)")
+    sp.add_argument(
+        "--mcp",
+        action="store_true",
+        help="ajouter aussi le serveur MCP à mcp-config.json (si la politique MCP de l'organisation le permet)",
+    )
     sp.add_argument("--force", action="store_true")
     sp.set_defaults(func=cmd_copilot_install)
     return p

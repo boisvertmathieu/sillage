@@ -155,7 +155,15 @@ def render_report(a: Analysis, opps: list[Opportunity], title: str = "Sillage �
             "## Serveurs MCP",
             "",
             _table(
-                ["Serveur", "Chargé (sessions)", "Utilisé (sessions)", "Appels", "Échecs", "Erreurs démarrage"],
+                [
+                    "Serveur",
+                    "Chargé (sessions)",
+                    "Utilisé (sessions)",
+                    "Appels",
+                    "Échecs",
+                    "Erreurs démarrage",
+                    "Désactivé",
+                ],
                 [
                     [
                         m["server"],
@@ -164,6 +172,7 @@ def render_report(a: Analysis, opps: list[Opportunity], title: str = "Sillage �
                         m["calls"],
                         _pct(m["failure_rate"]),
                         m["startup_errors"],
+                        m.get("disabled_sessions", 0),
                     ]
                     for m in a.mcp
                 ],

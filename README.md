@@ -17,8 +17,9 @@ Sillage transforme ces journaux en trois choses :
 2. **Opportunités d'amélioration** priorisées et prouvées : « ce hook de garde-fou plante dans 39 sessions »,
    « ce skill est corrigé 0,7 fois par session », « `npm test` échoue dans ce dépôt, l'équipe contourne
    avec `npm run test:unit` »... avec **où** corriger (SKILL.md, .agent.md, AGENTS.md, hook, mcp-config).
-3. **Leçons apprises réinjectées** dans les futures sessions, par `AGENTS.md` (bloc idempotent) ou en direct
-   par un **serveur MCP** (`sillage_lessons`) : la boucle d'auto-amélioration se ferme.
+3. **Leçons apprises réinjectées** dans les futures sessions par le `AGENTS.md` des dépôts (bloc idempotent,
+   publié par PR) : la boucle d'auto-amélioration se ferme. **Aucun serveur MCP n'est requis** ; un serveur
+   MCP optionnel (`sillage_lessons`) existe pour les organisations qui autorisent les MCP tiers.
 
 ```mermaid
 flowchart LR
@@ -30,7 +31,7 @@ flowchart LR
   D --> F["Opportunités<br/>(où corriger, preuves)"]
   D --> G["Leçons apprises"]
   F -->|agent sillage-coach| H["PR : SKILL.md, agents,<br/>AGENTS.md, garde-fous"]
-  G -->|AGENTS.md · MCP sillage_lessons| A
+  G -->|"PR : bloc AGENTS.md<br/>(MCP optionnel)"| A
   H -->|revue + garde-fous| A
 ```
 
@@ -71,13 +72,17 @@ Sous WSL, Sillage lit `~/.copilot` **et** les sessions lancées côté Windows (
 | `sillage opportunities` | Opportunités priorisées : preuves, action proposée, où corriger. `--category`, `--format json`. |
 | `sillage lessons` | Leçons apprises ; `--repo`, `--skill`, `--write AGENTS.md`, `--format agents-md`. |
 | `sillage export` | Bundle `.jsonl.gz` anonymisé à partager (niveau `metrics` par défaut). |
-| `sillage report --bundle *.jsonl.gz` | Vue d'équipe à partir des bundles de chacun. |
-| `sillage mcp` | Serveur MCP stdio en lecture seule (mémoire collective pour les agents). |
-| `sillage copilot-install [--mcp]` | Installe l'agent `sillage-coach` et le skill `sillage-amelioration` dans `~/.copilot`. |
+| `sillage report --bundle-dir <dossier>` | Vue d'équipe à partir des bundles déposés dans un dossier partagé. |
+| `sillage copilot-install` | Installe l'agent `sillage-coach` et le skill `sillage-amelioration` dans `~/.copilot`. |
+| `sillage mcp` | *Optionnel* : serveur MCP stdio en lecture seule, si la politique de l'organisation autorise les MCP tiers. |
 | `sillage doctor` | Diagnostic : sessions trouvées, versions de Copilot CLI, types d'événements inconnus. |
 | `sillage init-config` | Écrit un `sillage.toml` commenté (seuils, confidentialité, motifs de correction). |
 
-Options communes : `--since 30d|12w|2026-10-01`, `--repo owner/nom`, `--copilot-home <dir>`, `-o fichier`.
+Options communes : `--since 30d|12w|2026-10-01`, `--repo owner/nom`, `--bundle-dir <dossier>`,
+`--copilot-home <dir>`, `-o fichier`.
+
+**Déploiement en équipe pas à pas** (rôles, planification Windows, publication des leçons) :
+[docs/flux-equipe.md](docs/flux-equipe.md).
 
 ## Ce que Sillage détecte
 
@@ -96,18 +101,22 @@ Options communes : `--since 30d|12w|2026-10-01`, `--repo owner/nom`, `--copilot-
 
 Détails des calculs : [docs/methodologie.md](docs/methodologie.md).
 
-## Intégration Copilot CLI
+## Intégration Copilot CLI (sans MCP)
 
 ```bash
-sillage copilot-install --mcp
+sillage copilot-install
 ```
 
-* **Serveur MCP `sillage`** (lecture seule) : `sillage_lessons`, `sillage_opportunities`, `sillage_overview`,
-  `sillage_skill_health`. Ajoutez à vos AGENTS.md l'extrait affiché par la commande pour que l'agent
-  consulte les leçons au début de chaque tâche.
-* **Agent `sillage-coach`** : prend une opportunité, lit le fichier ciblé, propose le plus petit correctif
-  et ouvre une PR avec les preuves. Il ne fusionne jamais seul : vos garde-fous et revues s'appliquent.
+* **Leçons dans AGENTS.md** : `sillage lessons --bundle-dir <partage> --repo owner/nom --write AGENTS.md`
+  ou `examples/publier-lecons.sh` pour ouvrir une PR par dépôt. Copilot lit AGENTS.md nativement : aucune
+  installation ni autorisation n'est nécessaire chez les personnes qui en profitent.
+* **Agent `sillage-coach`** : `copilot --agent sillage-coach --allow-tool='shell(sillage:*)'`. Il lit les
+  opportunités avec la CLI, propose le plus petit correctif et ouvre une PR avec les preuves. Il ne
+  fusionne jamais seul : vos garde-fous et revues s'appliquent.
 * **Skill `sillage-amelioration`** : permet de demander en langage naturel « comment se passent nos sessions ? ».
+* **Optionnel, si les serveurs MCP tiers sont autorisés** : `sillage copilot-install --mcp` ajoute le
+  serveur `sillage` (outils `sillage_lessons`, `sillage_opportunities`, `sillage_overview`,
+  `sillage_skill_health`) pour consulter la mémoire collective en direct pendant une session.
 
 ## Confidentialité et éthique (résumé)
 

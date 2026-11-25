@@ -14,7 +14,7 @@
 ## Phases
 
 ### V0 — individuel (livré)
-Collecte locale, rapport, opportunités, leçons, `AGENTS.md`, serveur MCP, agent coach, démo.
+Collecte locale, rapport, opportunités, leçons, `AGENTS.md`, agent coach (CLI), démo ; serveur MCP optionnel.
 
 ### V1 — équipe pilote (2-4 semaines)
 * 5 à 10 volontaires : `sillage export` hebdomadaire vers un partage restreint (`examples/collecte-equipe.sh`).
@@ -26,7 +26,8 @@ Collecte locale, rapport, opportunités, leçons, `AGENTS.md`, serveur MCP, agen
 * Agent `sillage-coach` lancé sur les opportunités retenues → PR avec preuves.
 * Chaque correction de skill accompagnée d'un cas d'évaluation (banc d'évaluation des skills) ; l'effet est
   vérifié par Sillage 2 à 4 semaines plus tard (avant/après par identifiant d'opportunité).
-* `sillage lessons --write AGENTS.md` dans la CI des dépôts (PR automatique quand le bloc change).
+* Publication mensuelle des leçons par PR dans chaque dépôt (`examples/publier-lecons.sh`) : c'est le
+  canal principal tant que la politique Copilot de l'organisation désactive les serveurs MCP tiers.
 
 ### V3 — en session (extension Copilot CLI)
 Copilot CLI expose des extensions (`.github/extensions/<nom>/extension.mjs`) avec des hooks
