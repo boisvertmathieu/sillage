@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sillage"
+version = "0.1.0"
+description = "Observatoire des sessions GitHub Copilot CLI et moteur d'auto-amélioration des agents, skills et instructions."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Propriétaire — usage interne" }
+dependencies = []  # aucune dépendance d'exécution : bibliothèque standard uniquement
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+sillage = "sillage.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["sillage*"]
+
+[tool.setuptools.package-data]
+sillage = ["assets/**/*", "assets/copilot/**/*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]
+ignore = ["E501", "SIM108"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
