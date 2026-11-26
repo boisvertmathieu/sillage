@@ -488,9 +488,19 @@ def render_lessons_block(items: list[Lesson], title: str = "Leçons apprises des
     return "\n".join(lines) + "\n"
 
 
+def _read_text_tolerant(path: Path) -> str:
+    """UTF-8, sinon cp1252 (AGENTS.md enregistré en « ANSI » sous Windows) ; réécrit ensuite en UTF-8,
+    l'encodage que lit Copilot."""
+    raw = path.read_bytes()
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return raw.decode("cp1252", errors="replace")
+
+
 def write_lessons_block(path: Path, block: str) -> bool:
     """Insère ou remplace le bloc entre marqueurs (idempotent). Retourne True si le fichier a changé."""
-    original = path.read_text(encoding="utf-8") if path.exists() else ""
+    original = _read_text_tolerant(path) if path.exists() else ""
     if MARK_START in original and MARK_END in original:
         before, _, rest = original.partition(MARK_START)
         _, _, after = rest.partition(MARK_END)

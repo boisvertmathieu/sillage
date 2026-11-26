@@ -1,5 +1,6 @@
 import gzip
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -80,15 +81,15 @@ def test_html_is_self_contained(demo_analysis):
 
 def test_lessons_block_is_idempotent(tmp_path, demo_analysis):
     f = tmp_path / "AGENTS.md"
-    f.write_text("# Mon dépôt\n\nTexte existant.\n")
+    f.write_text("# Mon dépôt\n\nTexte existant.\n", encoding="utf-8")
     block = render_lessons_block(lessons(demo_analysis, repository="dp/portail-citoyen"))
     assert write_lessons_block(f, block) is True
     assert write_lessons_block(f, block) is False
-    content = f.read_text()
+    content = f.read_text(encoding="utf-8")
     assert content.count(MARK_START) == 1 and content.count(MARK_END) == 1
     assert content.startswith("# Mon dépôt\n\nTexte existant.\n")
     write_lessons_block(f, render_lessons_block([]))
-    assert "Aucune leçon" in f.read_text() and f.read_text().count(MARK_START) == 1
+    assert "Aucune leçon" in f.read_text(encoding="utf-8") and f.read_text(encoding="utf-8").count(MARK_START) == 1
 
 
 # ------------------------------------------------------- magasin et bundles
@@ -123,17 +124,20 @@ def test_bundle_roundtrip_strips_text(tmp_path, demo_records):
 
 def test_bundle_rejects_foreign_file(tmp_path):
     p = tmp_path / "x.jsonl"
-    p.write_text('{"hello": 1}\n')
+    p.write_text('{"hello": 1}\n', encoding="utf-8")
     with pytest.raises(ValueError):
         load_bundles([p])
 
 
 def test_config_loading(tmp_path):
     f = tmp_path / "sillage.toml"
-    f.write_text('[sillage]\nk_anonymity = 5\n[insights]\nmin_sessions = 7\n[corrections]\nextra_patterns = ["zut"]\n')
+    f.write_text(
+        '[sillage]\nk_anonymity = 5\n[insights]\nmin_sessions = 7\n[corrections]\nextra_patterns = ["zut"]\n',
+        encoding="utf-8",
+    )
     cfg = load_config(str(f))
     assert cfg.k_anonymity == 5 and cfg.thresholds.min_sessions == 7 and cfg.extra_correction_patterns == ["zut"]
-    f.write_text('[sillage]\nexport_privacy = "full"\n')
+    f.write_text('[sillage]\nexport_privacy = "full"\n', encoding="utf-8")
     with pytest.raises(ValueError):
         load_config(str(f))
 
@@ -176,7 +180,9 @@ def test_mcp_stdio_subprocess(tmp_path, demo_homes):
         text=True,
         timeout=60,
         env={
+            **{k: os.environ[k] for k in ("SYSTEMROOT", "USERPROFILE", "HOME") if k in os.environ},
             "SILLAGE_HOME": str(tmp_path / "h"),
+            "COPILOT_HOME": str(tmp_path / "c"),
             "PATH": "/usr/bin:/bin",
             "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
         },
@@ -191,13 +197,13 @@ def test_cli_end_to_end(tmp_path, demo_homes, capsys):
     homes = [a for h in demo_homes.values() for a in ("--copilot-home", str(h))]
     assert main(["collect", *homes]) == 0
     assert main(["report", "--no-collect", "--format", "html", "-o", str(tmp_path / "r.html")]) == 0
-    assert (tmp_path / "r.html").read_text().startswith("<!doctype html>")
+    assert (tmp_path / "r.html").read_text(encoding="utf-8").startswith("<!doctype html>")
     assert main(["opportunities", "--no-collect", "--format", "json", "-o", str(tmp_path / "o.json")]) == 0
-    assert len(json.loads((tmp_path / "o.json").read_text())) > 5
+    assert len(json.loads((tmp_path / "o.json").read_text(encoding="utf-8"))) > 5
     assert (
         main(["lessons", "--no-collect", "--repo", "dp/portail-citoyen", "--write", str(tmp_path / "AGENTS.md")]) == 0
     )
-    assert "npm run test:unit" in (tmp_path / "AGENTS.md").read_text()
+    assert "npm run test:unit" in (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
     assert main(["export", "--no-collect", "-o", str(tmp_path / "b.jsonl.gz")]) == 0
     assert main(["report", "--bundle", str(tmp_path / "b.jsonl.gz"), "--since", "3650d"]) == 0
     assert main(["doctor", *homes]) == 0
@@ -225,13 +231,13 @@ def test_cli_copilot_install(tmp_path):
     assert (target / "agents" / "sillage-coach.agent.md").exists()
     assert (target / "agents" / "sillage-onboarding.agent.md").exists()
     assert (target / "skills" / "sillage-amelioration" / "SKILL.md").exists()
-    cfg = json.loads((target / "mcp-config.json").read_text())
+    cfg = json.loads((target / "mcp-config.json").read_text(encoding="utf-8"))
     assert cfg["mcpServers"]["sillage"]["args"] == ["mcp"]
     # second passage : conserve les autres serveurs et fait une sauvegarde
     cfg["mcpServers"]["autre"] = {"type": "local", "command": "x"}
-    (target / "mcp-config.json").write_text(json.dumps(cfg))
+    (target / "mcp-config.json").write_text(json.dumps(cfg), encoding="utf-8")
     assert main(["copilot-install", "--target", str(target), "--mcp"]) == 0
-    cfg2 = json.loads((target / "mcp-config.json").read_text())
+    cfg2 = json.loads((target / "mcp-config.json").read_text(encoding="utf-8"))
     assert "autre" in cfg2["mcpServers"] and (target / "mcp-config.json.bak").exists()
 
 
@@ -254,7 +260,7 @@ def test_bundle_dir_feeds_team_lessons(tmp_path, demo_records, capsys):
     out = tmp_path / "AGENTS.md"
     args = ["lessons", "--bundle-dir", str(tmp_path / "partage"), "--repo", "dp/portail-citoyen", "--write", str(out)]
     assert main(args) == 0
-    assert "npm run test:unit" in out.read_text()
+    assert "npm run test:unit" in out.read_text(encoding="utf-8")
     capsys.readouterr()
     assert main(["opportunities", "--bundle-dir", str(tmp_path / "partage"), "--format", "json"]) == 0
     assert json.loads(capsys.readouterr().out)
@@ -267,7 +273,7 @@ def test_copilot_install_without_mcp_writes_no_mcp_config(tmp_path, capsys):
     printed = capsys.readouterr().out
     assert not (target / "mcp-config.json").exists()
     assert "shell(sillage:*)" in printed and "AGENTS.md" in printed
-    agent = (target / "agents" / "sillage-coach.agent.md").read_text()
+    agent = (target / "agents" / "sillage-coach.agent.md").read_text(encoding="utf-8")
     assert "sillage opportunities" in agent and "sans serveur MCP" in agent
 
 
@@ -290,7 +296,7 @@ def test_policy_disabled_mcp_is_not_an_outage(events):
 def test_example_scripts_are_valid_bash():
     import shutil
 
-    if not shutil.which("bash"):
+    if not shutil.which("bash") or sys.platform == "win32":  # sous Windows, « bash » est le lanceur WSL
         pytest.skip("bash absent")
     for script in (Path(__file__).resolve().parents[1] / "examples").glob("*.sh"):
         assert subprocess.run(["bash", "-n", str(script)], capture_output=True).returncode == 0, script
@@ -393,7 +399,7 @@ def test_invalid_redaction_pattern_is_rejected(tmp_path):
 
 
 def test_collect_script_filename_does_not_derive_from_username():
-    script = (Path(__file__).resolve().parents[1] / "examples" / "collecte-equipe.sh").read_text()
+    script = (Path(__file__).resolve().parents[1] / "examples" / "collecte-equipe.sh").read_text(encoding="utf-8")
     assert "whoami" not in script and "/dev/urandom" in script
 
 
@@ -485,3 +491,11 @@ def test_compare_cli(tmp_path, demo_homes, capsys):
     assert "Avant / après le 2026-11-01" in out and "Sessions touchées / 100" in out
     assert main(["compare", "--pivot", "2026-11-01", "--format", "json", *homes]) == 0
     assert "counts" in json.loads(capsys.readouterr().out)
+
+
+def test_lessons_block_accepts_ansi_agents_md(tmp_path, demo_analysis):
+    f = tmp_path / "AGENTS.md"
+    f.write_bytes("# Mon dépôt\r\n\r\nTexte existant.\r\n".encode("cp1252"))
+    assert write_lessons_block(f, render_lessons_block(lessons(demo_analysis, repository="dp/portail-citoyen")))
+    text = f.read_text(encoding="utf-8")
+    assert text.startswith("# Mon dépôt") and MARK_START in text

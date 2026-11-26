@@ -54,7 +54,7 @@ def local_salt() -> str:
         path.write_text(secrets.token_hex(16))
         with contextlib.suppress(OSError):
             path.chmod(0o600)
-    return path.read_text().strip()
+    return path.read_text(encoding="utf-8").strip()
 
 
 def shared_salt(cfg: Config) -> str | None:
@@ -86,7 +86,7 @@ class LocalStore:
     def _load_index(self) -> dict[str, tuple[float, int]]:
         if not self.index_path.exists():
             return {}
-        raw = json.loads(self.index_path.read_text())
+        raw = json.loads(self.index_path.read_text(encoding="utf-8"))
         return {k: (v[0], v[1]) for k, v in raw.items()}
 
     def load(self) -> dict[str, SessionRecord]:

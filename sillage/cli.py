@@ -403,7 +403,7 @@ def cmd_copilot_install(args: argparse.Namespace, cfg: Config) -> int:
     server = {"type": "local", "command": shutil.which("sillage") or "sillage", "args": ["mcp"], "tools": ["*"]}
     if args.mcp:
         cfg_path = target / "mcp-config.json"
-        data = json.loads(cfg_path.read_text()) if cfg_path.exists() else {"mcpServers": {}}
+        data = json.loads(cfg_path.read_text(encoding="utf-8")) if cfg_path.exists() else {"mcpServers": {}}
         if cfg_path.exists():
             shutil.copy2(cfg_path, cfg_path.with_suffix(".json.bak"))
         data.setdefault("mcpServers", {})["sillage"] = server

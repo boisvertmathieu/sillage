@@ -33,7 +33,7 @@ def _home(tmp_path, events_factory, n=12):
     home = tmp_path / "copilot"
     repo_root = tmp_path / "clone-app"
     repo_root.mkdir()
-    (repo_root / "AGENTS.md").write_text("# AGENTS\n")
+    (repo_root / "AGENTS.md").write_text("# AGENTS\n", encoding="utf-8")
     for i in range(n):
         ev = events_factory()
         _session(ev, repo_root, i)
@@ -56,7 +56,7 @@ def test_onboarding_resolves_unclear_points(tmp_path):
     chats = ide / "User" / "workspaceStorage" / "ab12" / "chatSessions"
     chats.mkdir(parents=True)
     for i in range(30):
-        (chats / f"{i}.json").write_text("{}")
+        (chats / f"{i}.json").write_text("{}", encoding="utf-8")
     o = _run(tmp_path, home, [ide])
     by = {c.id: c for c in o.checks}
 
@@ -122,7 +122,7 @@ def test_count_ide_chats_counts_without_reading(tmp_path):
     root = tmp_path / "Code"
     d = root / "User" / "globalStorage" / "emptyWindowChatSessions"
     d.mkdir(parents=True)
-    (d / "a.json").write_text("secret")
+    (d / "a.json").write_text("secret", encoding="utf-8")
     assert count_ide_chats([root, tmp_path / "absent"]) == {str(root): [1, 1]}
 
 
@@ -134,7 +134,7 @@ def test_onboard_cli(tmp_path, capsys):
     assert main(["onboard", "--copilot-home", str(home), "--depots", str(depots)]) == 0
     out = capsys.readouterr().out
     assert "Fiche d'onboarding" in out and "Document local" in out
-    assert "dp/app" in depots.read_text()
+    assert "dp/app" in depots.read_text(encoding="utf-8")
     assert main(["onboard", "--copilot-home", str(home), "--partageable", "--format", "json"]) == 0
     assert json.loads(capsys.readouterr().out)["ready"] is True
     # aucune session : bloquant, code de sortie 2

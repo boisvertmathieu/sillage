@@ -105,12 +105,11 @@ def _apply(obj: object, values: dict) -> None:
 
 
 def load_config(path: str | None = None) -> Config:
-    candidates = [
-        path,
-        os.environ.get("SILLAGE_CONFIG"),
-        "sillage.toml",
-        str(Path.home() / ".config" / "sillage" / "sillage.toml"),
-    ]
+    try:
+        user_cfg = str(Path.home() / ".config" / "sillage" / "sillage.toml")
+    except RuntimeError:  # répertoire personnel indéterminable (environnement minimal)
+        user_cfg = None
+    candidates = [path, os.environ.get("SILLAGE_CONFIG"), "sillage.toml", user_cfg]
     cfg = Config()
     for cand in candidates:
         if cand and Path(cand).is_file():
