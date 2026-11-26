@@ -196,6 +196,11 @@ def render_html(
             _pct(a.context.get("mean_tool_definitions_share")),
             f"≈ {_n(a.context.get('mean_tool_definitions_tokens'))} tokens / session",
         ),
+        (
+            "Consommation",
+            f"{_n(ov.get('ai_units', 0))} AIU",
+            f"{_n(ov['premium_requests'])} requêtes premium",
+        ),
         ("Opportunités", _n(len(opps)), "d'amélioration détectées"),
     ]
     tiles_html = "".join(

@@ -55,6 +55,7 @@ class PermissionDecision:
     kind: str  # shell | write | read | mcp | url | ...
     result: str  # approved | approved-for-session | denied-interactively-by-user | ...
     target: str | None = None  # identifiant de commande, serveur MCP...
+    read_only: bool | None = None  # commande jugée en lecture seule par Copilot
 
 
 @dataclass
@@ -102,6 +103,7 @@ class SessionRecord:
     output_tokens: int = 0
     cache_read_tokens: int = 0
     premium_requests: float | None = None
+    nano_aiu: int | None = None  # consommation en nano-unités IA (totalNanoAiu)
     lines_added: int = 0
     lines_removed: int = 0
     files_modified: int = 0
@@ -114,6 +116,7 @@ class SessionRecord:
     friction_label: str = "fluide"
     estimated_minutes_lost: float = 0.0
     unknown_event_types: list[str] = field(default_factory=list)
+    replayed_events: int = 0  # événements « checkpoint » ignorés (déjà présents dans l'historique d'origine)
     privacy_level: str = "metrics"
 
     # ------------------------------------------------------------------ helpers

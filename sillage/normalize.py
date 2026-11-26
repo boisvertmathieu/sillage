@@ -119,7 +119,92 @@ KNOWN_EVENT_TYPES = {
     "session.canvas.closed",
     "session.extensions.attachments_pushed",
     "mcp_app.tool_call_complete",
+    # ajoutés d'après les types générés de @github/copilot-sdk (dist/generated/session-events.d.ts)
+    "assistant.fusion_phase_activity",
+    "assistant.fusion_phase_completed",
+    "assistant.fusion_phase_failed",
+    "assistant.fusion_phase_started",
+    "assistant.idle",
+    "assistant.server_tool_progress",
+    "assistant.tool_call_delta",
+    "auto_mode_recovery.outcome",
+    "auto_mode_recovery_consent.completed",
+    "auto_mode_recovery_consent.requested",
+    "human_response.recorded",
+    "ide.add_file_reference",
+    "ide.connection_changed",
+    "ide.elicitation_complete",
+    "ide.selection_changed",
+    "instruction.update",
+    "mcp.headers_refresh_completed",
+    "mcp.headers_refresh_required",
+    "mcp.oauth_recovery_completed",
+    "mcp.prompts.list_changed",
+    "mcp.resources.list_changed",
+    "mcp.tools.list_changed",
+    "model.call_finished",
+    "permission.assentDetected",
+    "permission.carriedForward",
+    "permission.contextualAuthorization",
+    "permission.messageAuthorization",
+    "permission.messageAuthorizationDegraded",
+    "permission.messageAuthorizationRead",
+    "session.auto_mode_resolved",
+    "session.auto_tier_recommendation",
+    "session.auto_tier_switch_failed",
+    "session.autopilot_stopped",
+    "session.binary_asset",
+    "session.canvas.recorded",
+    "session.canvas.removed",
+    "session.canvas.unavailable",
+    "session.compaction_summarized",
+    "session.completion_receipt",
+    "session.context_cleared",
+    "session.fusion_completed",
+    "session.fusion_resolved",
+    "session.fusion_route_failed",
+    "session.fusion_route_started",
+    "session.indexed_search",
+    "session.journal_link",
+    "session.managed_plugin_progress",
+    "session.managed_settings_enforced",
+    "session.managed_settings_resolved",
+    "session.mcp_server_needs_reconnect",
+    "session.mcp_server_removed",
+    "session.mcp_server_tools_loaded",
+    "session.mode_notice_delivered",
+    "session.model_deselected",
+    "session.permission_recovery",
+    "session.quota_observation",
+    "session.schedule_rearmed",
+    "session.session_limits_changed",
+    "session.todos_changed",
+    "session.usage_checkpoint",
+    "session_limits_exhausted.completed",
+    "session_limits_exhausted.requested",
+    "subagent.configured",
+    "tool.shell_output",
+    "tool_search.activated",
+    "ui.ephemeral_query",
+    "workflow.run_settled",
+    "workflow.run_started",
+    "workflow.run_updated",
 }
+
+#: Événements d'état conservés même s'ils proviennent d'un point de reprise (``checkpoint: true``) :
+#: ils décrivent le contexte (dépôt, skills, agents, MCP) sans rien compter deux fois.
+CHECKPOINT_STATE_EVENTS = {
+    "session.start",
+    "session.resume",
+    "session.context_changed",
+    "session.skills_loaded",
+    "session.custom_agents_updated",
+    "session.mcp_servers_loaded",
+    "session.usage_info",
+    "session.usage_checkpoint",
+}
+#: Raisons d'``abort`` qui traduisent une interruption humaine (les autres : limite de crédits, etc.).
+HUMAN_ABORT_REASONS = {None, "", "user_initiated", "user_abort", "remote_command"}
 
 SHELL_TOOLS = {
     "bash",
@@ -312,7 +397,10 @@ def _result_text(result: object) -> str | None:
     return None
 
 
-def _result_exit_code(result: object) -> int | None:
+def _result_exit_code(result: object, data: dict | None = None) -> int | None:
+    shell = (data or {}).get("shellExecution")
+    if isinstance(shell, dict) and isinstance(shell.get("exitCode"), int):
+        return shell["exitCode"]  # champ structuré (Copilot CLI récents)
     if not isinstance(result, dict):
         return None
     for block in result.get("contents") or []:
@@ -374,6 +462,7 @@ def normalize(
     last_meaningful: tuple[str, bool] | None = None  # (type, failed?)
     fail_streak: dict[tuple, int] = {}
     recent_shell: list[ToolCall] = []  # derniers appels shell (détection des contournements)
+    call_aiu = 0  # somme des nano-AIU par appel (repli si ni point de contrôle ni fermeture)
 
     for ev in raw.events:
         etype = ev.get("type", "")
@@ -386,6 +475,9 @@ def normalize(
         is_sub = bool(ev.get("agentId")) or bool(data.get("parentToolCallId"))
         if etype not in KNOWN_EVENT_TYPES:
             unknown.add(etype)
+            continue
+        if ev.get("checkpoint") is True and etype not in CHECKPOINT_STATE_EVENTS:
+            rec.replayed_events += 1  # rejoué depuis un point de reprise : déjà compté dans l'historique d'origine
             continue
 
         if etype in ("session.start", "session.resume", "session.context_changed"):
@@ -446,11 +538,20 @@ def normalize(
             rec.input_tokens += int(data.get("inputTokens") or 0)
             rec.output_tokens += int(data.get("outputTokens") or 0)
             rec.cache_read_tokens += int(data.get("cacheReadTokens") or 0)
+            usage = data.get("copilotUsage") if isinstance(data.get("copilotUsage"), dict) else {}
+            if isinstance(usage.get("totalNanoAiu"), (int, float)):
+                call_aiu += int(usage["totalNanoAiu"])
+
+        elif etype == "session.usage_checkpoint":
+            if isinstance(data.get("totalNanoAiu"), (int, float)):
+                rec.nano_aiu = max(rec.nano_aiu or 0, int(data["totalNanoAiu"]))
 
         elif etype == "model.call_failure":
             rec.model_failures += 1
 
         elif etype == "abort":
+            if data.get("reason") not in HUMAN_ABORT_REASONS:
+                continue  # p. ex. limite de crédits IA atteinte : pas une interruption humaine
             rec.aborts += 1
             rec.corrections.append(Correction("interruption", after_skill=current_skill))
             last_meaningful = ("abort", True)
@@ -498,7 +599,7 @@ def normalize(
                 text = err.get("message") or _result_text(data.get("result"))
                 call.success = False
             else:
-                code = _result_exit_code(data.get("result")) if call.category == "shell" else None
+                code = _result_exit_code(data.get("result"), data) if call.category == "shell" else None
                 call.exit_code = code
                 if code not in (None, 0):
                     call.success = False
@@ -603,7 +704,11 @@ def normalize(
             req = data.get("permissionRequest") if isinstance(data.get("permissionRequest"), dict) else {}
             kind = req.get("kind") or "?"
             target = None
+            read_only = None
             if kind == "shell":
+                flags = [c.get("readOnly") for c in req.get("commands") or [] if isinstance(c, dict)]
+                if flags and all(isinstance(f, bool) for f in flags):
+                    read_only = all(flags)
                 ids = [
                     c.get("identifier")
                     for c in req.get("commands") or []
@@ -617,11 +722,12 @@ def normalize(
                     shell_ids_by_call[req["toolCallId"]] = ids
             elif kind == "mcp":
                 target = f"{req.get('serverName')}/{req.get('toolName')}"
+                read_only = req.get("readOnly") if isinstance(req.get("readOnly"), bool) else None
             elif kind in ("write", "read"):
                 path = req.get("fileName") or req.get("path")
                 target = PurePath(path).suffix.lower() if isinstance(path, str) else None
             perm_requests[data.get("requestId") or f"_p{len(perm_requests)}"] = PermissionDecision(
-                kind=kind, result="en-attente", target=target
+                kind=kind, result="en-attente", target=target, read_only=read_only
             )
 
         elif etype == "permission.completed":
@@ -665,6 +771,8 @@ def normalize(
 
         elif etype == "session.shutdown":
             rec.shutdown_type = data.get("shutdownType")
+            if isinstance(data.get("totalNanoAiu"), (int, float)):
+                rec.nano_aiu = max(rec.nano_aiu or 0, int(data["totalNanoAiu"]))
             if isinstance(data.get("totalPremiumRequests"), (int, float)):
                 rec.premium_requests = data["totalPremiumRequests"]
             changes = data.get("codeChanges") if isinstance(data.get("codeChanges"), dict) else {}
@@ -682,6 +790,8 @@ def normalize(
                 rec.tool_definitions_tokens = max(rec.tool_definitions_tokens or 0, data["toolDefinitionsTokens"])
 
     # Requêtes de permission jamais complétées (session interrompue) : ignorées.
+    if call_aiu and (rec.nano_aiu or 0) < call_aiu:
+        rec.nano_aiu = call_aiu
     if timestamps:
         timestamps.sort()
         rec.start, rec.end = timestamps[0].isoformat(), timestamps[-1].isoformat()

@@ -16,9 +16,18 @@ from statistics import mean, median
 
 from sillage.model import SessionRecord
 
-APPROVED = {"approved", "approved-for-session", "approved-for-location"}
+APPROVED = {"approved", "approved-for-session", "approved-for-location", "approved-read-only-for-session"}
 DENIED_BY_USER = {"denied-interactively-by-user"}
-DENIED_BY_POLICY = {"denied-by-rules", "denied-by-permission-request-hook", "denied-by-content-exclusion-policy"}
+DENIED_BY_POLICY = {
+    "denied-by-rules",
+    "denied-by-permission-request-hook",
+    "denied-by-content-exclusion-policy",
+    "denied-no-approval-rule-and-could-not-request-from-user",
+}
+OUTSIDE_REPO = "(hors dépôt)"
+SMALL_REPOS = "(dépôts regroupés : moins de k personnes)"
+#: Statuts MCP qui traduisent une désactivation (souvent par la politique de l'organisation), pas une panne.
+MCP_DISABLED = {"disabled", "stopped"}
 
 
 def _avg(values: list[float]) -> float:
@@ -115,6 +124,7 @@ def analyze(records: list[SessionRecord], k_anonymity: int = 2) -> Analysis:
         "cache_read_tokens": sum(r.cache_read_tokens for r in records),
         "tool_output_chars": sum(t.output_chars or 0 for t in calls),
         "premium_requests": round(sum(r.premium_requests or 0 for r in records), 1),
+        "ai_units": round(sum(r.nano_aiu or 0 for r in records) / 1e9, 2),
         "lines_added": sum(r.lines_added for r in records),
         "lines_removed": sum(r.lines_removed for r in records),
         "skills_invocations": sum(1 for r in records for s in r.skills_invoked if s.trigger != "context-load"),
@@ -202,7 +212,7 @@ def analyze(records: list[SessionRecord], k_anonymity: int = 2) -> Analysis:
                 "top_startup_error": Counter(startup_errors).most_common(1)[0][0] if startup_errors else None,
                 "failed_status_sessions": sum(1 for r in loaded if r.mcp_servers.get(s) in {"failed", "error"}),
                 # « disabled » = désactivé (souvent par la politique Copilot de l'organisation) : pas une panne
-                "disabled_sessions": sum(1 for r in loaded if r.mcp_servers.get(s) == "disabled"),
+                "disabled_sessions": sum(1 for r in loaded if r.mcp_servers.get(s) in MCP_DISABLED),
             }
         )
     a.mcp = sorted(rows, key=lambda d: (-d["calls"], -d["sessions_loaded"]))
@@ -279,6 +289,7 @@ def analyze(records: list[SessionRecord], k_anonymity: int = 2) -> Analysis:
     perms: dict[tuple[str, str], Counter] = defaultdict(Counter)
     perm_users: dict[tuple[str, str], set[str]] = defaultdict(set)
     perm_sessions: Counter = Counter()
+    perm_rw: dict[tuple[str, str], Counter] = defaultdict(Counter)
     for r in records:
         for key in {(p.kind, p.target or "?") for p in r.permissions}:
             perm_sessions[key] += 1
@@ -286,6 +297,8 @@ def analyze(records: list[SessionRecord], k_anonymity: int = 2) -> Analysis:
             key = (p.kind, p.target or "?")
             perms[key][p.result] += 1
             perm_users[key].add(r.user)
+            if p.read_only is not None:
+                perm_rw[key]["read" if p.read_only else "write"] += 1
     a.permissions = sorted(
         (
             {
@@ -294,6 +307,8 @@ def analyze(records: list[SessionRecord], k_anonymity: int = 2) -> Analysis:
                 "requests": sum(c.values()),
                 "approved": sum(v for res, v in c.items() if res in APPROVED),
                 "approved_once": c.get("approved", 0),
+                # True : Copilot juge toujours la commande en lecture seule ; False : au moins une fois en écriture
+                "read_only": (not perm_rw[k]["write"]) if perm_rw[k] else None,
                 "denied_by_user": sum(v for res, v in c.items() if res in DENIED_BY_USER),
                 "denied_by_policy": sum(v for res, v in c.items() if res in DENIED_BY_POLICY),
                 "users": len(perm_users[k]),
@@ -350,9 +365,15 @@ def analyze(records: list[SessionRecord], k_anonymity: int = 2) -> Analysis:
     ]
 
     # ------------------------------------------------------------- dépôts
+    # En vue d'équipe, un dépôt utilisé par moins de k personnes serait une vue individuelle de fait :
+    # ces dépôts sont regroupés sur une seule ligne.
+    repo_users: dict[str, set[str]] = defaultdict(set)
+    for r in records:
+        repo_users[r.repository or OUTSIDE_REPO].add(r.user)
     by_repo: dict[str, list[SessionRecord]] = defaultdict(list)
     for r in records:
-        by_repo[r.repository or "(hors dépôt)"].append(r)
+        key = r.repository or OUTSIDE_REPO
+        by_repo[key if a.shareable(repo_users[key]) else SMALL_REPOS].append(r)
     a.repositories = sorted(
         (
             {

@@ -13,7 +13,7 @@ import hashlib
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from sillage.analyze import Analysis, ErrorPattern
+from sillage.analyze import OUTSIDE_REPO, SMALL_REPOS, Analysis, ErrorPattern
 from sillage.classify import classify, display
 from sillage.config import InsightThresholds
 
@@ -269,7 +269,12 @@ def opportunities(a: Analysis, th: InsightThresholds | None = None) -> list[Oppo
 
     # R6 — permissions : demandes systématiquement approuvées (bruit) ou refusées (garde-fou manquant)
     for p in a.permissions:
-        if p["kind"] == "shell" and p["approved_once"] >= th.allowlist_min_approvals and p["denied_by_user"] == 0:
+        if (
+            p["kind"] == "shell"
+            and p["approved_once"] >= th.allowlist_min_approvals
+            and p["denied_by_user"] == 0
+            and p.get("read_only") is not False  # jamais d'autorisation par défaut pour une commande qui écrit
+        ):
             add(
                 Opportunity(
                     id=_oid("allow", p["target"]),
@@ -326,7 +331,7 @@ def opportunities(a: Analysis, th: InsightThresholds | None = None) -> list[Oppo
 
     # R8 — dépôts à friction élevée / boucles d'échec
     for r in a.repositories:
-        if r["repository"] == "(hors dépôt)" or r["sessions"] < th.min_sessions:
+        if r["repository"] in (OUTSIDE_REPO, SMALL_REPOS) or r["sessions"] < th.min_sessions:
             continue
         if r["failure_loops"] >= th.min_sessions or r["mean_friction"] >= ov["mean_friction"] + 10:
             add(
@@ -416,8 +421,10 @@ def lessons(
             text = f"{what} échoue souvent ({display(p.signature)}) : utiliser plutôt `{rec[0]}` (solution observée {rec[1]} fois)."
         else:
             text = f"{what} échoue souvent ({display(p.signature)}). {agent_hint(p.signature)}"
-        repos = list(p.repositories)
-        scopes = [f"repo:{r}" for r in repos] if len(repos) == 1 else ["global"]
+        # une leçon d'erreur ne va que dans les dépôts où l'erreur a été vue (pas de bruit ailleurs) ;
+        # « global » seulement pour les erreurs vues hors de tout dépôt
+        repos = sorted(p.repositories)
+        scopes = [f"repo:{r}" for r in repos] if repos else ["global"]
         for scope in scopes:
             out.append(Lesson(scope, text, p.occurrences, len(p.sessions), len(p.users), p.last_seen))
     for perm in a.permissions:

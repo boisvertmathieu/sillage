@@ -115,6 +115,18 @@ def cmd_opportunities(args: argparse.Namespace, cfg: Config) -> int:
     return 0
 
 
+def cmd_compare(args: argparse.Namespace, cfg: Config) -> int:
+    from sillage.compare import compare, render_comparison
+    from sillage.store import parse_duration
+
+    pivot = parse_since(args.pivot)
+    window = parse_duration(args.window)
+    recs = _records(argparse.Namespace(**{**vars(args), "since": None}), cfg)
+    c = compare(recs, pivot, window, cfg.thresholds, cfg.k_anonymity, args.id)
+    _emit(_json(c.to_dict()) if args.format == "json" else render_comparison(c), args.output)
+    return 0
+
+
 def cmd_lessons(args: argparse.Namespace, cfg: Config) -> int:
     a = analyze(_records(argparse.Namespace(**{**vars(args), "repo": None}), cfg), cfg.k_anonymity)
     items = lessons(a, cfg.thresholds, repository=args.repo, skill=args.skill)[: args.limit]
@@ -203,12 +215,9 @@ def cmd_inspect(args: argparse.Namespace, cfg: Config) -> int:
 def cmd_export(args: argparse.Namespace, cfg: Config) -> int:
     recs = _records(args, cfg)
     if args.preview:
-        from sillage.store import apply_privacy, get_salt
+        from sillage.store import privacy_copies
 
-        level = args.level or cfg.export_privacy
-        salt = get_salt(cfg)
-        preview = [apply_privacy(r, level, salt, cfg.hash_repositories, cfg.redaction_patterns) for r in recs]
-        _emit(inspect_records(preview), None)
+        _emit(inspect_records(privacy_copies(recs, cfg, args.level)), None)
         return 0
     if not args.output:
         raise ValueError("Préciser -o FICHIER (ou --preview pour voir le contenu sans écrire)")
@@ -225,7 +234,13 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
     print(f"Sillage {__version__} — Python {sys.version.split()[0]}")
     print(f"Configuration : {cfg.source or 'valeurs par défaut'}")
     print(f"Magasin local : {data_dir()}")
-    print(f"Sel de pseudonymisation : {'partagé ($' + cfg.salt_env + ')' if os.environ.get(cfg.salt_env) else 'local'}")
+    shared = bool(os.environ.get(cfg.salt_env))
+    print(
+        "Pseudonymes : personne et session avec le sel local du poste ; dépôts "
+        + (("pseudonymisés (sel d'équipe $" + cfg.salt_env + ")") if cfg.hash_repositories else "en clair")
+    )
+    if cfg.hash_repositories and not shared:
+        print(f"⚠ hash_repositories = true mais ${cfg.salt_env} n'est pas défini : l'export échouera.")
     print(f"Confidentialité : magasin « {cfg.local_privacy} », export « {cfg.export_privacy} », k={cfg.k_anonymity}")
     homes = candidate_homes(args.copilot_home or cfg.copilot_homes or None)
     total = 0
@@ -248,7 +263,7 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
                     versions[data.get("copilotVersion")] += 1
                 elif ev.get("type") == "session.mcp_servers_loaded":
                     for srv in data.get("servers") or []:
-                        if isinstance(srv, dict) and srv.get("status") == "disabled":
+                        if isinstance(srv, dict) and srv.get("status") in ("disabled", "stopped"):
                             mcp_disabled.add(str(srv.get("name")))
     from sillage.normalize import KNOWN_EVENT_TYPES
 
@@ -309,15 +324,8 @@ def cmd_demo(args: argparse.Namespace, cfg: Config) -> int:
     agents = out / "AGENTS.exemple.md"
     agents.write_text("# AGENTS.md — dp/portail-citoyen\n\nInstructions du dépôt pour les agents.\n", encoding="utf-8")
     write_lessons_block(agents, render_lessons_block(lessons(a, cfg.thresholds, repository="dp/portail-citoyen")))
-    previous = os.environ.get(cfg.salt_env)
-    os.environ[cfg.salt_env] = "demo"  # sel fixe : n'écrit rien dans le magasin local de l'utilisateur
-    try:
-        export_bundle(recs, out / "bundle-equipe.jsonl.gz", cfg, "metrics")
-    finally:
-        if previous is None:
-            os.environ.pop(cfg.salt_env, None)
-        else:
-            os.environ[cfg.salt_env] = previous
+    # sel fixe : n'écrit rien dans le magasin local de l'utilisateur
+    export_bundle(recs, out / "bundle-equipe.jsonl.gz", cfg, "metrics", salt="demo")
     print(
         f"Démo générée dans {out}/ : rapport.html, rapport.md, opportunites.md, lecons.md, "
         f"AGENTS.exemple.md, bundle-equipe.jsonl.gz"
@@ -434,6 +442,14 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["skill", "agent", "instructions", "guardrail", "permissions", "mcp", "environment", "context"],
     )
     sp.set_defaults(func=cmd_opportunities)
+
+    sp = sub.add_parser("compare", help="effet d'un correctif : indicateurs et opportunités avant / après une date")
+    data_opts(sp)
+    sp.add_argument("--pivot", required=True, help="date de fusion du correctif (ISO, ex. 2026-11-15)")
+    sp.add_argument("--window", default="28d", help="durée de chaque période autour du pivot (défaut 28d ; '' = tout)")
+    sp.add_argument("--id", action="append", help="limiter à un identifiant d'opportunité (répétable)")
+    sp.add_argument("--format", choices=["md", "json"], default="md")
+    sp.set_defaults(func=cmd_compare)
 
     sp = sub.add_parser("lessons", help="leçons apprises (réinjectables dans AGENTS.md)")
     data_opts(sp)

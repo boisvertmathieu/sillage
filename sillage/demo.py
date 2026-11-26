@@ -44,6 +44,9 @@ MCP_SERVERS = ["splunk", "servicenow", "jira", "dynatrace"]
 MODELS = ["claude-sonnet-4.6", "gpt-5.2", "claude-opus-4.6"]
 
 
+_READ_ONLY = {"git status", "git diff", "git log", "ls", "cat", "grep"}
+
+
 class _Builder:
     def __init__(self, rng: random.Random, start: datetime) -> None:
         self.rng = rng
@@ -90,6 +93,7 @@ class _Builder:
                 "outputTokens": self.rng.randint(200, 2500),
                 "cacheReadTokens": self.rng.randint(10000, 45000),
                 "cacheWriteTokens": 0,
+                "copilotUsage": {"totalNanoAiu": self.rng.randint(20, 90) * 10_000_000},
                 "duration": 4000,
                 "apiCallId": "a",
                 "initiator": "agent",
@@ -130,7 +134,7 @@ class _Builder:
             }
             if name == "bash":
                 req["fullCommandText"] = args.get("command", "")
-                req["commands"] = [{"identifier": i, "readOnly": False} for i in (perm_ids or [])]
+                req["commands"] = [{"identifier": i, "readOnly": i in _READ_ONLY} for i in (perm_ids or [])]
             if mcp:
                 req.update({"serverName": mcp[0], "toolName": mcp[1]})
             self.emit("permission.requested", {"requestId": rid, "permissionRequest": req})

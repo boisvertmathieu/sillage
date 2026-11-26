@@ -40,16 +40,27 @@ def data_dir() -> Path:
     return d
 
 
-def get_salt(cfg: Config) -> str:
-    shared = os.environ.get(cfg.salt_env)
-    if shared:
-        return shared
+def local_salt() -> str:
+    """Sel aléatoire propre au poste, jamais partagé : sert aux pseudonymes de personne et de session.
+
+    Un sel connu de toute l'équipe permettrait de retrouver une personne en testant
+    ``HMAC(prénom@poste)`` pour chaque collègue : il n'est donc jamais utilisé pour l'identité.
+    """
     path = data_dir() / "salt"
     if not path.exists():
         path.write_text(secrets.token_hex(16))
         with contextlib.suppress(OSError):
             path.chmod(0o600)
     return path.read_text().strip()
+
+
+def shared_salt(cfg: Config) -> str | None:
+    """Sel commun à l'équipe (variable ``salt_env``) : seulement pour les pseudonymes de dépôts."""
+    return os.environ.get(cfg.salt_env) or None
+
+
+def get_salt(cfg: Config) -> str:  # compatibilité : identité => toujours le sel local
+    return local_salt()
 
 
 @dataclass
@@ -98,7 +109,7 @@ class LocalStore:
         home_paths = candidate_homes(homes or cfg.copilot_homes or None)
         index = self._load_index()
         records = self.load()
-        salt = get_salt(cfg)
+        salt = local_salt()
         updated = bad = 0
         unknown: set[str] = set()
         for raw in read_sessions(home_paths, skip=index):
@@ -142,6 +153,18 @@ def parse_since(value: str | None) -> datetime | None:
         raise ValueError(f"Période invalide : {value!r} (ex. 30d, 12w, 2026-10-01)") from exc
 
 
+def parse_duration(value: str | None) -> timedelta | None:
+    """``28d``, ``4w``, ``48h`` ; vide => None (aucune limite)."""
+    if not value:
+        return None
+    v = value.strip().lower()
+    units = {"d": "days", "w": "weeks", "h": "hours"}
+    try:
+        return timedelta(**{units[v[-1]]: float(v[:-1])})
+    except (KeyError, ValueError) as exc:
+        raise ValueError(f"Durée invalide : {value!r} (ex. 28d, 4w, 48h)") from exc
+
+
 def filter_records(
     records: Iterable[SessionRecord], since: datetime | None = None, repository: str | None = None
 ) -> list[SessionRecord]:
@@ -172,12 +195,16 @@ def apply_privacy(
     salt: str,
     hash_repositories: bool = False,
     redaction_patterns: list[str] | None = None,
+    repo_salt: str | None = None,
 ) -> SessionRecord:
     """Copie de ``rec`` prête à quitter la machine.
 
     * ``redacted`` : caviardage refait avec les motifs actuels de l'organisation ;
     * ``metrics``  : en plus, aucun extrait ni commande complète ;
     * ``strict``   : en plus, chaque signature d'erreur devient ``type#empreinte`` (aucun texte d'origine).
+
+    ``salt`` (local au poste) re-pseudonymise la personne et la session ; ``repo_salt`` (partagé par
+    l'équipe) sert aux pseudonymes de dépôts, qui doivent être identiques d'un poste à l'autre.
     """
     extra = compile_patterns(redaction_patterns)
 
@@ -194,8 +221,14 @@ def apply_privacy(
 
     out = SessionRecord.from_dict(rec.to_dict())
     out.session_id = pseudonymize("session:" + rec.session_id, salt, 16)
+    out.user = pseudonymize("user:" + rec.user, salt)
     if hash_repositories and out.repository:
-        out.repository = "depot-" + pseudonymize("repo:" + out.repository, salt, 8)
+        if not repo_salt:
+            raise ValueError(
+                "hash_repositories = true exige un sel d'équipe (variable SILLAGE_SALT) : sans lui, chaque poste "
+                "produirait un pseudonyme différent pour le même dépôt."
+            )
+        out.repository = "depot-" + pseudonymize("repo:" + out.repository, repo_salt, 8)
     for t in out.tool_calls:
         t.error_signature = sig(t.error_signature)
         t.target = scrub(t.target)
@@ -227,9 +260,20 @@ def apply_privacy(
     return out
 
 
-def export_bundle(records: list[SessionRecord], path: Path, cfg: Config, level: str | None = None) -> int:
+def privacy_copies(
+    records: list[SessionRecord], cfg: Config, level: str | None = None, salt: str | None = None
+) -> list[SessionRecord]:
+    """Copies prêtes à quitter le poste (même traitement pour ``export`` et ``export --preview``)."""
     level = level or cfg.export_privacy
-    salt = get_salt(cfg)
+    salt = salt or local_salt()
+    repo_salt = shared_salt(cfg)
+    return [apply_privacy(r, level, salt, cfg.hash_repositories, cfg.redaction_patterns, repo_salt) for r in records]
+
+
+def export_bundle(
+    records: list[SessionRecord], path: Path, cfg: Config, level: str | None = None, salt: str | None = None
+) -> int:
+    level = level or cfg.export_privacy
     manifest = {
         "magic": BUNDLE_MAGIC,
         "schema": RECORD_SCHEMA_VERSION,
@@ -241,8 +285,7 @@ def export_bundle(records: list[SessionRecord], path: Path, cfg: Config, level: 
     path.parent.mkdir(parents=True, exist_ok=True)
     with gzip.open(path, "wt", encoding="utf-8") as fh:
         fh.write(json.dumps(manifest) + "\n")
-        for rec in records:
-            out = apply_privacy(rec, level, salt, cfg.hash_repositories, cfg.redaction_patterns)
+        for out in privacy_copies(records, cfg, level, salt):
             fh.write(json.dumps(out.to_dict(), ensure_ascii=False) + "\n")
     return len(records)
 

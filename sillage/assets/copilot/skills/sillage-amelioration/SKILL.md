@@ -24,7 +24,8 @@ que sur les sessions locales de la personne.
 | Leçons d'un dépôt | `sillage lessons --repo <owner/nom>` |
 | Injecter les leçons dans AGENTS.md | `sillage lessons --repo <owner/nom> --write AGENTS.md` |
 | Vue d'équipe | ajouter `--bundle-dir <dossier des bundles>` à report / opportunities / lessons |
-| Partager ses données (anonymisées) | `sillage export -o <dossier>/moi.jsonl.gz` |
+| Voir ce qui sortirait, puis partager | `sillage export --preview` · `sillage export -o <dossier>/<nom-aléatoire>.jsonl.gz` |
+| Effet d'un correctif (avant/après) | `sillage compare --pivot <date du correctif>` |
 
 ## Procédure
 
@@ -38,4 +39,5 @@ que sur les sessions locales de la personne.
 ## Règles
 
 - Aucun classement ou jugement individuel : Sillage mesure les outils, pas les personnes.
-- Les exports partagés utilisent le niveau `metrics` (aucun texte libre) sauf décision explicite.
+- Les exports partagés utilisent le niveau `strict` par défaut (aucun mot issu d'un message d'erreur) ;
+  `metrics` ou `redacted` seulement sur décision explicite de l'équipe.

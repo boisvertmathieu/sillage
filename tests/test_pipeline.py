@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from sillage.analyze import analyze
 from sillage.cli import main
 from sillage.config import Config, load_config
 from sillage.insights import (
@@ -17,6 +18,7 @@ from sillage.insights import (
     write_lessons_block,
 )
 from sillage.mcp_server import SillageMCP
+from sillage.model import SessionRecord
 from sillage.report_html import render_html
 from sillage.report_md import render_report
 from sillage.store import LocalStore, export_bundle, load_bundles
@@ -373,3 +375,93 @@ def test_invalid_redaction_pattern_is_rejected(tmp_path):
 def test_collect_script_filename_does_not_derive_from_username():
     script = (Path(__file__).resolve().parents[1] / "examples" / "collecte-equipe.sh").read_text()
     assert "whoami" not in script and "/dev/urandom" in script
+
+
+# ------------------------------------------------- confidentialité (pilote)
+def test_repositories_below_k_are_grouped_in_team_view(demo_records):
+    from sillage.analyze import SMALL_REPOS
+
+    solo = SessionRecord.from_dict({**demo_records[0].to_dict(), "session_id": "solo", "repository": "dp/secret-solo"})
+    a = analyze(demo_records + [solo], k_anonymity=2)
+    names = [r["repository"] for r in a.repositories]
+    assert "dp/secret-solo" not in names and SMALL_REPOS in names
+    assert not [o for o in opportunities(a) if o.target in ("dp/secret-solo", SMALL_REPOS)]
+    # vue locale (une seule personne) : aucun regroupement
+    mine = [r for r in demo_records if r.user == demo_records[0].user]
+    assert SMALL_REPOS not in [r["repository"] for r in analyze(mine).repositories]
+
+
+def test_identity_never_uses_shared_salt(tmp_path, demo_records, monkeypatch):
+    from sillage.redact import pseudonymize
+
+    rec = demo_records[0]
+    monkeypatch.setenv("SILLAGE_SALT", "connu-de-tous")
+    path = tmp_path / "b.jsonl.gz"
+    export_bundle([rec], path, Config(), "strict")
+    out = load_bundles([path])[0]
+    assert out.user != rec.user and out.user != pseudonymize("user:" + rec.user, "connu-de-tous")
+
+
+def test_hashed_repositories_need_team_salt(tmp_path, demo_records, monkeypatch):
+    cfg = Config(hash_repositories=True)
+    with pytest.raises(ValueError, match="sel d'équipe"):
+        export_bundle(demo_records[:1], tmp_path / "a.jsonl.gz", cfg)
+    monkeypatch.setenv("SILLAGE_SALT", "equipe")
+    export_bundle(demo_records[:1], tmp_path / "a.jsonl.gz", cfg, salt="poste-a")
+    export_bundle(demo_records[:1], tmp_path / "b.jsonl.gz", cfg, salt="poste-b")
+    a, b = load_bundles([tmp_path / "a.jsonl.gz"])[0], load_bundles([tmp_path / "b.jsonl.gz"])[0]
+    assert a.repository == b.repository and a.repository.startswith("depot-")
+    assert a.user != b.user  # identité : sel local, différent d'un poste à l'autre
+
+
+def test_error_lessons_only_reach_repositories_where_seen(demo_analysis):
+    from sillage.analyze import ErrorPattern
+
+    p = ErrorPattern("npm error Missing script", "bash", "npm run lint", "shell", occurrences=5)
+    p.sessions, p.users = {"a", "b", "c"}, {"u1", "u2"}
+    p.repositories.update({"dp/a": 2, "dp/b": 1})
+    demo_analysis.errors.append(p)
+    try:
+        assert any("npm run lint" in lsn.text for lsn in lessons(demo_analysis, repository="dp/a"))
+        assert any("npm run lint" in lsn.text for lsn in lessons(demo_analysis, repository="dp/b"))
+        assert not any("npm run lint" in lsn.text for lsn in lessons(demo_analysis, repository="dp/infra-terraform"))
+    finally:
+        demo_analysis.errors.remove(p)
+
+
+# ------------------------------------------------------- avant / après
+def test_compare_detects_resolved_opportunity(demo_records, capsys):
+    from datetime import datetime
+
+    from sillage.compare import compare
+
+    starts = sorted(r.start for r in demo_records)
+    pivot = datetime.fromisoformat(starts[len(starts) // 2])
+    fixed = []
+    for r in demo_records:
+        r = SessionRecord.from_dict(r.to_dict())
+        if datetime.fromisoformat(r.start) >= pivot:  # correctif fusionné : `npm test` n'échoue plus
+            for t in r.tool_calls:
+                if t.target == "npm test":
+                    t.success, t.error_signature = True, None
+        fixed.append(r)
+    target = next(o for o in opportunities(analyze(demo_records)) if o.target == "npm test")
+    c = compare(fixed, pivot)
+    d = next(d for d in c.deltas if d.id == target.id)
+    assert d.status == "resolue" and d.after_per_100 == 0 and d.before_per_100 > 0
+    assert c.counts()["resolue"] >= 1 and c.before["sessions"] + c.after["sessions"] == len(fixed)
+    # sans correctif : la même opportunité persiste
+    same = next(d for d in compare(demo_records, pivot).deltas if d.id == target.id)
+    assert same.status in ("stable", "en-baisse", "en-hausse")
+    assert compare(fixed, pivot, ids=[target.id[:4]]).deltas[0].id == target.id
+
+
+def test_compare_cli(tmp_path, demo_homes, capsys):
+    homes = []
+    for h in list(demo_homes.values())[:3]:
+        homes += ["--copilot-home", str(h)]
+    assert main(["compare", "--pivot", "2026-11-01", "--window", "", *homes]) == 0
+    out = capsys.readouterr().out
+    assert "Avant / après le 2026-11-01" in out and "Sessions touchées / 100" in out
+    assert main(["compare", "--pivot", "2026-11-01", "--format", "json", *homes]) == 0
+    assert "counts" in json.loads(capsys.readouterr().out)

@@ -88,7 +88,7 @@ def render_report(a: Analysis, opps: list[Opportunity], title: str = "Sillage �
                 ["Tokens entrée / sortie", f"{_n(ov['input_tokens'])} / {_n(ov['output_tokens'])}"],
                 ["Taux de cache (lecture / entrée)", _pct(a.context.get("cache_hit_ratio"))],
                 ["Définitions d'outils (part du contexte)", _pct(a.context.get("mean_tool_definitions_share"))],
-                ["Requêtes premium", _n(ov["premium_requests"])],
+                ["Requêtes premium · unités IA (AIU)", f"{_n(ov['premium_requests'])} · {_n(ov.get('ai_units', 0))}"],
                 ["Lignes ajoutées / retirées", f"{_n(ov['lines_added'])} / {_n(ov['lines_removed'])}"],
                 ["Invocations de skills · sous-agents", f"{_n(ov['skills_invocations'])} · {_n(ov['subagent_runs'])}"],
             ],
