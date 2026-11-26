@@ -4,16 +4,10 @@ Ce flux fonctionne **sans serveur MCP** : il convient aux organisations dont la 
 désactive les serveurs MCP tiers. Tout passe par la ligne de commande `sillage`, un dossier partagé
 et le fichier `AGENTS.md` des dépôts, que Copilot lit nativement.
 
-```mermaid
-flowchart LR
-  A["Poste de chaque membre<br/>sessions Copilot CLI"] -->|"hebdo, automatique<br/>collecte-equipe.sh"| B["Dossier partagé<br/>bundles anonymisés"]
-  B -->|"mensuel<br/>rapport-equipe.sh"| C["Rapport HTML (gestion)<br/>+ opportunités"]
-  C -->|"revue 30 min<br/>2-3 opportunités"| D["Agent sillage-coach<br/>PR avec preuves"]
-  D -->|"revue + garde-fous"| E["Skills / agents /<br/>hooks corrigés"]
-  B -->|"mensuel<br/>publier-lecons.sh"| F["PR : bloc de leçons<br/>dans AGENTS.md"]
-  E --> A
-  F --> A
-```
+![Schéma en couloirs du flux Sillage : qui fait quoi, et quand](img/flux-sillage.png)
+
+Version complète, avec les 12 étapes détaillées et les points de contrôle humains : ouvrir
+[flux-equipe.html](flux-equipe.html) dans un navigateur (fichier autonome, à partager tel quel).
 
 ## Rôles
 

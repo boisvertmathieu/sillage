@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Flux Sillage</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Mise en page : une colonne de lecture, un grand schéma en couloirs (qui × quand), puis les étapes par phase. */
+:root{
+  --bg:#f5f7fa; --surface:#ffffff; --fg:#152030; --muted:#566476; --line:#d7dde6;
+  --human:#2357c6; --human-soft:#e6edfb;
+  --auto:#0c7f69; --auto-soft:#dff2ec;
+  --data:#5f6b7a; --data-soft:#eceff3;
+  --lane-a:#ffffff; --lane-b:#f8fafc;
+  --font-display:"Space Grotesk",ui-sans-serif,system-ui,sans-serif;
+  --font-body:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f141b; --surface:#161d26; --fg:#e5eaf1; --muted:#9ba7b6; --line:#2a3442;
+  --human:#80a6ff; --human-soft:#1b2944; --auto:#4fc8a7; --auto-soft:#12312a;
+  --data:#a6b0bd; --data-soft:#212935; --lane-a:#161d26; --lane-b:#131a22; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f141b; --surface:#161d26; --fg:#e5eaf1; --muted:#9ba7b6; --line:#2a3442;
+  --human:#80a6ff; --human-soft:#1b2944; --auto:#4fc8a7; --auto-soft:#12312a;
+  --data:#a6b0bd; --data-soft:#212935; --lane-a:#161d26; --lane-b:#131a22; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 var(--font-body)}
+.wrap{max-width:1180px;margin:0 auto;padding-block:40px 56px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  display:grid;gap:44px}
+h1,h2,h3{font-family:var(--font-display);text-wrap:balance;margin:0;line-height:1.2}
+h1{font-size:clamp(1.9rem,4vw,2.6rem);letter-spacing:-.01em}
+h2{font-size:1.35rem}
+h3{font-size:1.02rem}
+p{margin:0}
+.lede{max-width:68ch;color:var(--muted);font-size:1.05rem;margin-top:10px}
+.eyebrow{font:600 .75rem/1 var(--font-body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+code,.mono{font-family:var(--font-mono);font-size:.86em}
+section{display:grid;gap:16px;min-width:0}
+.section-head{display:grid;gap:6px}
+.section-head p{color:var(--muted);max-width:72ch}
+
+/* rôles */
+.roles{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr));gap:12px}
+.role{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:grid;gap:6px;align-content:start}
+.role .who{display:flex;align-items:center;gap:8px;font-weight:600}
+.dot{width:10px;height:10px;border-radius:50%;flex:none}
+.dot.human{background:var(--human)} .dot.auto{background:var(--auto)} .dot.data{background:var(--data)}
+.role .effort{font-family:var(--font-mono);font-size:.8rem;color:var(--muted)}
+.role p{color:var(--muted);font-size:.92rem}
+
+/* schéma */
+figure{margin:0;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;min-width:0}
+.legend{display:flex;flex-wrap:wrap;gap:16px;font-size:.85rem;color:var(--muted);margin-bottom:10px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{display:inline-block;width:22px;height:12px;border-radius:3px;border:1.5px solid}
+.legend .h{background:var(--human-soft);border-color:var(--human)}
+.legend .a{background:var(--auto-soft);border-color:var(--auto);border-style:dashed}
+.legend .d{background:var(--data-soft);border-color:var(--data)}
+.legend b{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:var(--fg);color:var(--surface);font-size:.7rem}
+.scroll{overflow-x:auto}
+.scroll svg{display:block;min-width:980px;width:100%;height:auto;color:var(--fg)}
+figcaption{margin-top:10px;color:var(--muted);font-size:.88rem;max-width:80ch}
+svg text{font-family:var(--font-body)}
+svg .lane-a{fill:var(--lane-a)} svg .lane-b{fill:var(--lane-b)}
+svg .sep{stroke:var(--line);stroke-width:1}
+svg .colsep{stroke:var(--line);stroke-width:1;stroke-dasharray:3 4}
+svg .colhead{font:600 12px var(--font-body);fill:var(--muted);letter-spacing:.04em}
+svg .lane-title{font:600 13px var(--font-body);fill:var(--fg)}
+svg .lane-sub{font:11px var(--font-body);fill:var(--muted)}
+svg .n-human rect.box{fill:var(--human-soft);stroke:var(--human);stroke-width:1.5}
+svg .n-auto rect.box{fill:var(--auto-soft);stroke:var(--auto);stroke-width:1.5;stroke-dasharray:5 3}
+svg .n-data rect.box{fill:var(--data-soft);stroke:var(--data);stroke-width:1.5}
+svg .t1{font:600 12.5px var(--font-body);fill:var(--fg)}
+svg .t2{font:11px var(--font-mono);fill:var(--muted)}
+svg .badge circle{fill:var(--fg)} svg .badge text{font:700 10px var(--font-body);fill:var(--surface)}
+svg .arrow{fill:none;stroke:var(--fg);stroke-width:1.4}
+svg .arrow.loop{stroke:var(--human);stroke-dasharray:6 4;stroke-width:1.6}
+svg .al{font:11px var(--font-body);fill:var(--muted)}
+svg .al.loop{fill:var(--human);font-weight:600}
+svg #ah path{fill:var(--fg)} svg #ah-loop path{fill:var(--human)}
+
+/* étapes */
+.phase{display:grid;gap:10px}
+.phase-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:6px}
+.phase-head .when{font-family:var(--font-mono);font-size:.82rem;color:var(--muted)}
+ol.steps{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.step{display:grid;grid-template-columns:34px minmax(0,1fr);gap:14px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.num{width:28px;height:28px;border-radius:50%;background:var(--fg);color:var(--surface);display:grid;place-items:center;font:700 .82rem var(--font-display)}
+.step-body{display:grid;gap:6px;min-width:0}
+.meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:.78rem;font-weight:600;padding:2px 9px;border-radius:99px;border:1px solid}
+.chip.human{color:var(--human);background:var(--human-soft);border-color:transparent}
+.chip.auto{color:var(--auto);background:var(--auto-soft);border-color:transparent}
+.chip.time{color:var(--muted);border-color:var(--line);font-weight:500;font-family:var(--font-mono)}
+.step p{color:var(--muted);font-size:.93rem;max-width:80ch}
+.step p strong{color:var(--fg);font-weight:600}
+pre{margin:2px 0 0;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 12px;overflow-x:auto;font:12.5px/1.5 var(--font-mono);color:var(--fg)}
+.result{font-size:.88rem;color:var(--fg)}
+.result::before{content:"Résultat : ";color:var(--muted)}
+
+/* données */
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:12px}
+.box{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:grid;gap:8px;align-content:start}
+.box ul{margin:0;padding-left:18px;color:var(--muted);font-size:.93rem;display:grid;gap:4px}
+.box.yes h3{color:var(--auto)} .box.no h3{color:var(--fg)}
+.gates{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.gates li{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:start;color:var(--muted);font-size:.93rem}
+.gates li b{color:var(--fg);font-weight:600}
+.gate-mark{font:600 .72rem var(--font-mono);color:var(--human);border:1px solid var(--human);border-radius:4px;padding:1px 6px;white-space:nowrap}
+footer{color:var(--muted);font-size:.85rem;border-top:1px solid var(--line);padding-top:16px}
+footer a{color:var(--human)}
+a:focus-visible{outline:2px solid var(--human);outline-offset:2px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Sillage · fonctionnement en équipe</div>
+    <h1>Flux Sillage</h1>
+    <p class="lede">Comment les sessions Copilot CLI de la direction deviennent, chaque mois, des skills, des agents et des instructions améliorés. Tout passe par la ligne de commande, un dossier partagé et le fichier AGENTS.md des dépôts : aucun serveur MCP n'est nécessaire.</p>
+  </header>
+
+  <section aria-labelledby="roles">
+    <div class="section-head">
+      <h2 id="roles">Qui fait quoi</h2>
+      <p>Quatre acteurs humains et deux automatismes. L'effort humain se concentre chez le curateur ; les membres de l'équipe n'ont rien à faire après l'installation.</p>
+    </div>
+    <div class="roles">
+      <div class="role"><div class="who"><span class="dot human"></span>Membre de l'équipe</div><div class="effort">5 min une fois, puis rien</div><p>Installe Sillage, planifie la collecte hebdomadaire et continue d'utiliser Copilot CLI normalement.</p></div>
+      <div class="role"><div class="who"><span class="dot human"></span>Curateur (lead IA)</div><div class="effort">≈ 1 h par mois + revue 30 min</div><p>Produit le rapport mensuel, publie les leçons, anime la revue et mesure l'effet des corrections.</p></div>
+      <div class="role"><div class="who"><span class="dot human"></span>Responsable d'outil</div><div class="effort">1 à 3 PR à relire par mois</div><p>Propriétaire d'un skill, d'un agent, d'un hook ou d'un dépôt. Lance l'agent coach et décide de fusionner ou non.</p></div>
+      <div class="role"><div class="who"><span class="dot human"></span>Gestion</div><div class="effort">lecture du rapport mensuel</div><p>Reçoit le tableau de bord HTML : adoption, sessions fluides, temps perdu estimé, effet des corrections. Aucune donnée par personne.</p></div>
+      <div class="role"><div class="who"><span class="dot auto"></span>Tâche planifiée Windows</div><div class="effort">chaque vendredi, automatique</div><p>Sur chaque poste : collecte les sessions et dépose un bundle pseudonymisé dans le dossier partagé.</p></div>
+      <div class="role"><div class="who"><span class="dot auto"></span>Agent sillage-coach</div><div class="effort">sur demande, dans Copilot CLI</div><p>Transforme une opportunité en correctif minimal et ouvre une PR avec les preuves. Ne fusionne jamais.</p></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="schema">
+    <div class="section-head">
+      <h2 id="schema">Le flux sur un cycle</h2>
+      <p>Chaque couloir est un acteur, chaque colonne un moment du mois. Les numéros renvoient aux étapes détaillées plus bas. Le calendrier (jour 1, jour 2, jours 3 à 10) est une cadence proposée, à ajuster à votre rythme.</p>
+    </div>
+    <figure>
+      <div class="legend" aria-hidden="true">
+        <span><i class="h"></i>Action humaine</span>
+        <span><i class="a"></i>Automatique</span>
+        <span><i class="d"></i>Fichiers et dépôts</span>
+        <span><b>6</b>Étape détaillée</span>
+      </div>
+      <div class="scroll">
+<svg viewBox="0 0 1150 616" role="img" aria-label="Schéma en couloirs du flux Sillage : les membres installent Sillage et une tâche planifiée dépose chaque vendredi un bundle pseudonymisé dans le dossier partagé ; le curateur produit le rapport et publie les leçons le jour 1, anime la revue le jour 2 ; l'agent coach prépare les correctifs, les responsables relisent et fusionnent ; les sessions suivantes lisent les dépôts mis à jour et le curateur mesure l'effet le mois suivant.">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker>
+    <marker id="ah-loop" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker>
+  </defs>
+
+  <!-- couloirs -->
+  <rect class="lane-a" x="0" y="56" width="1150" height="78"/>
+  <rect class="lane-b" x="0" y="134" width="1150" height="78"/>
+  <rect class="lane-a" x="0" y="212" width="1150" height="78"/>
+  <rect class="lane-b" x="0" y="290" width="1150" height="78"/>
+  <rect class="lane-a" x="0" y="368" width="1150" height="78"/>
+  <rect class="lane-b" x="0" y="446" width="1150" height="78"/>
+  <rect class="lane-a" x="0" y="524" width="1150" height="78"/>
+  <line class="sep" x1="0" y1="56" x2="1150" y2="56"/><line class="sep" x1="0" y1="134" x2="1150" y2="134"/>
+  <line class="sep" x1="0" y1="212" x2="1150" y2="212"/><line class="sep" x1="0" y1="290" x2="1150" y2="290"/>
+  <line class="sep" x1="0" y1="368" x2="1150" y2="368"/><line class="sep" x1="0" y1="446" x2="1150" y2="446"/>
+  <line class="sep" x1="0" y1="524" x2="1150" y2="524"/><line class="sep" x1="0" y1="602" x2="1150" y2="602"/>
+  <line class="sep" x1="172" y1="20" x2="172" y2="602"/>
+
+  <!-- colonnes (moments) -->
+  <g class="colhead" text-anchor="middle">
+    <text x="260" y="38">UNE FOIS</text>
+    <text x="420" y="38">CHAQUE VENDREDI</text>
+    <text x="580" y="38">JOUR 1 DU MOIS</text>
+    <text x="740" y="38">JOUR 2</text>
+    <text x="900" y="38">JOURS 3 À 10</text>
+    <text x="1060" y="38">MOIS SUIVANT</text>
+  </g>
+  <line class="colsep" x1="340" y1="24" x2="340" y2="602"/><line class="colsep" x1="500" y1="24" x2="500" y2="602"/>
+  <line class="colsep" x1="660" y1="24" x2="660" y2="602"/><line class="colsep" x1="820" y1="24" x2="820" y2="602"/>
+
+  <!-- libellés des couloirs -->
+  <g>
+    <text class="lane-title" x="14" y="91">Membre</text><text class="lane-sub" x="14" y="108">poste WSL</text>
+    <text class="lane-title" x="14" y="169">Tâche planifiée</text><text class="lane-sub" x="14" y="186">automatique, sur le poste</text>
+    <text class="lane-title" x="14" y="247">Dossier partagé</text><text class="lane-sub" x="14" y="264">bundles pseudonymisés</text>
+    <text class="lane-title" x="14" y="325">Curateur</text><text class="lane-sub" x="14" y="342">lead IA</text>
+    <text class="lane-title" x="14" y="403">Agent coach</text><text class="lane-sub" x="14" y="420">sillage-coach, Copilot CLI</text>
+    <text class="lane-title" x="14" y="481">Responsable d'outil</text><text class="lane-sub" x="14" y="498">propriétaire du dépôt</text>
+    <text class="lane-title" x="14" y="559">Dépôts</text><text class="lane-sub" x="14" y="576">AGENTS.md, skills, agents</text>
+  </g>
+
+  <!-- flèches (sous les nœuds) -->
+  <g>
+    <line class="arrow" x1="260" y1="118" x2="260" y2="150" marker-end="url(#ah)"/>
+    <text class="al" x="266" y="138">crée</text>
+    <line class="arrow" x1="328" y1="95" x2="352" y2="95" marker-end="url(#ah)"/>
+    <line class="arrow" x1="420" y1="118" x2="420" y2="150" marker-end="url(#ah)"/>
+    <text class="al" x="426" y="138">lit events.jsonl</text>
+    <line class="arrow" x1="420" y1="196" x2="420" y2="228" marker-end="url(#ah)"/>
+    <text class="al" x="426" y="216">dépose</text>
+    <polyline class="arrow" points="420,274 420,329 512,329" marker-end="url(#ah)"/>
+    <text class="al" x="428" y="320">fusion 35 j</text>
+    <line class="arrow" x1="648" y1="329" x2="672" y2="329" marker-end="url(#ah)"/>
+    <polyline class="arrow" points="740,352 740,407 832,407" marker-end="url(#ah)"/>
+    <text class="al" x="748" y="399">2-3 retenues</text>
+    <line class="arrow" x1="580" y1="352" x2="580" y2="462" marker-end="url(#ah)"/>
+    <text class="al" x="587" y="402">PR de leçons</text>
+    <text class="al" x="587" y="416">par dépôt</text>
+    <line class="arrow" x1="900" y1="430" x2="900" y2="462" marker-end="url(#ah)"/>
+    <text class="al" x="906" y="450">PR + preuves</text>
+    <line class="arrow" x1="900" y1="508" x2="900" y2="540" marker-end="url(#ah)"/>
+    <text class="al" x="906" y="528">fusionne</text>
+    <polyline class="arrow" points="580,508 580,563 832,563" marker-end="url(#ah)"/>
+    <text class="al" x="590" y="556">fusionne</text>
+    <polyline class="arrow loop" points="968,563 980,563 980,95 992,95" marker-end="url(#ah-loop)"/>
+    <text class="al loop" transform="translate(974 330) rotate(-90)" text-anchor="middle">lu au démarrage</text>
+    <line class="arrow loop" x1="1060" y1="118" x2="1060" y2="306" marker-end="url(#ah-loop)"/>
+    <text class="al loop" x="1067" y="208">nouvelles</text>
+    <text class="al loop" x="1067" y="222">sessions</text>
+  </g>
+
+  <!-- nœuds : x = centre − 68, y = milieu du couloir − 23 -->
+  <g class="n-human"><rect class="box" x="192" y="72" width="136" height="46" rx="8"/><text class="t1" x="260" y="91" text-anchor="middle">Installe Sillage</text><text class="t2" x="260" y="107" text-anchor="middle">pipx · doctor</text></g>
+  <g class="n-auto"><rect class="box" x="192" y="150" width="136" height="46" rx="8"/><text class="t1" x="260" y="169" text-anchor="middle">Tâche hebdo créée</text><text class="t2" x="260" y="185" text-anchor="middle">schtasks</text></g>
+  <g class="n-human"><rect class="box" x="192" y="306" width="136" height="46" rx="8"/><text class="t1" x="260" y="325" text-anchor="middle">Prépare le partage</text><text class="t2" x="260" y="341" text-anchor="middle">dossier · dépôts</text></g>
+
+  <g class="n-human"><rect class="box" x="352" y="72" width="136" height="46" rx="8"/><text class="t1" x="420" y="91" text-anchor="middle">Utilise Copilot CLI</text><text class="t2" x="420" y="107" text-anchor="middle">~/.copilot</text></g>
+  <g class="n-auto"><rect class="box" x="352" y="150" width="136" height="46" rx="8"/><text class="t1" x="420" y="169" text-anchor="middle">Collecte + export</text><text class="t2" x="420" y="185" text-anchor="middle">collecte-equipe.sh</text></g>
+  <g class="n-data"><rect class="box" x="352" y="228" width="136" height="46" rx="8"/><text class="t1" x="420" y="247" text-anchor="middle">Bundle pseudonymisé</text><text class="t2" x="420" y="263" text-anchor="middle">niveau strict</text></g>
+
+  <g class="n-human"><rect class="box" x="512" y="306" width="136" height="46" rx="8"/><text class="t1" x="580" y="325" text-anchor="middle">Rapport + leçons</text><text class="t2" x="580" y="341" text-anchor="middle">2 scripts</text></g>
+  <g class="n-human"><rect class="box" x="512" y="462" width="136" height="46" rx="8"/><text class="t1" x="580" y="481" text-anchor="middle">Relit PR de leçons</text><text class="t2" x="580" y="497" text-anchor="middle">bloc AGENTS.md</text></g>
+
+  <g class="n-human"><rect class="box" x="672" y="306" width="136" height="46" rx="8"/><text class="t1" x="740" y="325" text-anchor="middle">Revue 30 min</text><text class="t2" x="740" y="341" text-anchor="middle">choisit · assigne</text></g>
+
+  <g class="n-auto"><rect class="box" x="832" y="384" width="136" height="46" rx="8"/><text class="t1" x="900" y="403" text-anchor="middle">Rédige le correctif</text><text class="t2" x="900" y="419" text-anchor="middle">1 sujet = 1 PR</text></g>
+  <g class="n-human"><rect class="box" x="832" y="462" width="136" height="46" rx="8"/><text class="t1" x="900" y="481" text-anchor="middle">Relit la PR</text><text class="t2" x="900" y="497" text-anchor="middle">garde-fous + CI</text></g>
+  <g class="n-data"><rect class="box" x="832" y="540" width="136" height="46" rx="8"/><text class="t1" x="900" y="559" text-anchor="middle">Dépôts mis à jour</text><text class="t2" x="900" y="575" text-anchor="middle">AGENTS.md · skills</text></g>
+
+  <g class="n-human"><rect class="box" x="992" y="72" width="136" height="46" rx="8"/><text class="t1" x="1060" y="91" text-anchor="middle">Sessions suivantes</text><text class="t2" x="1060" y="107" text-anchor="middle">moins d'irritants</text></g>
+  <g class="n-human"><rect class="box" x="992" y="306" width="136" height="46" rx="8"/><text class="t1" x="1060" y="325" text-anchor="middle">Mesure l'effet</text><text class="t2" x="1060" y="341" text-anchor="middle">avant / après</text></g>
+
+  <!-- pastilles d'étapes -->
+  <g class="badge" text-anchor="middle">
+    <circle cx="192" cy="72" r="9"/><text x="192" y="75.5">1</text>
+    <circle cx="192" cy="150" r="9"/><text x="192" y="153.5">2</text>
+    <circle cx="192" cy="306" r="9"/><text x="192" y="309.5">3</text>
+    <circle cx="352" cy="72" r="9"/><text x="352" y="75.5">4</text>
+    <circle cx="352" cy="150" r="9"/><text x="352" y="153.5">5</text>
+    <circle cx="512" cy="306" r="9"/><text x="512" y="309.5">6</text>
+    <circle cx="512" cy="462" r="9"/><text x="512" y="465.5">7</text>
+    <circle cx="672" cy="306" r="9"/><text x="672" y="309.5">8</text>
+    <circle cx="832" cy="384" r="9"/><text x="832" y="387.5">9</text>
+    <circle cx="832" cy="462" r="9"/><text x="832" y="465.5">10</text>
+    <circle cx="992" cy="72" r="9"/><text x="992" y="75.5">11</text>
+    <circle cx="992" cy="306" r="9"/><text x="992" y="309.5">12</text>
+  </g>
+</svg>
+      </div>
+      <figcaption>Les données partent des postes une fois par semaine sous forme pseudonymisée et minimisée. Le curateur les transforme une fois par mois en rapport, en leçons et en opportunités. Deux chemins reviennent vers les dépôts, et chacun passe par une PR relue par un humain : les leçons (étape 7) et les correctifs du coach (étape 10). La boucle en pointillé montre le retour : les sessions suivantes lisent les dépôts mis à jour, et leurs données servent à mesurer l'effet.</figcaption>
+    </figure>
+  </section>
+
+  <section aria-labelledby="etapes">
+    <div class="section-head">
+      <h2 id="etapes">Étape par étape</h2>
+      <p>Les commandes sont celles du dépôt. Remplacez <code>/mnt/p/equipe-ia/sillage</code> par l'emplacement réel du dossier partagé.</p>
+    </div>
+
+    <div class="phase">
+      <div class="phase-head"><h3>Mise en place</h3><span class="when">une seule fois</span></div>
+      <ol class="steps">
+        <li class="step"><span class="num">1</span><div class="step-body">
+          <div class="meta"><span class="chip human">Membre de l'équipe</span><span class="chip time">5 min</span></div>
+          <p><strong>Installer Sillage et vérifier qu'il trouve les sessions.</strong> <code>doctor</code> compte les sessions (WSL et Windows) et signale les serveurs MCP désactivés par la politique.</p>
+          <pre>pipx install git+https://github.com/boisvertmathieu/sillage.git
+sillage doctor</pre>
+        </div></li>
+        <li class="step"><span class="num">2</span><div class="step-body">
+          <div class="meta"><span class="chip human">Membre de l'équipe</span><span class="chip time">2 min</span></div>
+          <p><strong>Planifier la collecte hebdomadaire</strong> avec le Planificateur de tâches Windows, plus fiable que le cron de WSL qui ne tourne que si WSL est ouvert.</p>
+          <pre>schtasks.exe /Create /SC WEEKLY /D FRI /ST 16:17 /TN "Sillage collecte" /TR "wsl.exe -e bash -lc 'SILLAGE_PARTAGE=/mnt/p/equipe-ia/sillage ~/sillage/examples/collecte-equipe.sh'"</pre>
+        </div></li>
+        <li class="step"><span class="num">3</span><div class="step-body">
+          <div class="meta"><span class="chip human">Curateur</span><span class="chip time">≈ 30 min</span></div>
+          <p><strong>Préparer le terrain.</strong> Créer le dossier partagé (accès restreint), écrire <code>depots.txt</code> (une ligne <code>owner/nom /chemin/du/clone</code> par dépôt suivi), installer l'agent coach et demander aux responsables d'ajouter l'extrait Sillage à leur AGENTS.md.</p>
+          <pre>sillage copilot-install</pre>
+          <p class="result">l'agent <code>sillage-coach</code> et le skill <code>sillage-amelioration</code> sont dans <code>~/.copilot</code>.</p>
+        </div></li>
+      </ol>
+    </div>
+
+    <div class="phase">
+      <div class="phase-head"><h3>En continu</h3><span class="when">chaque semaine</span></div>
+      <ol class="steps">
+        <li class="step"><span class="num">4</span><div class="step-body">
+          <div class="meta"><span class="chip human">Membre de l'équipe</span><span class="chip time">aucun effort</span></div>
+          <p><strong>Travailler normalement avec Copilot CLI.</strong> Copilot écrit déjà chaque session dans <code>~/.copilot/session-state/</code> ; Sillage ne change rien à l'usage.</p>
+        </div></li>
+        <li class="step"><span class="num">5</span><div class="step-body">
+          <div class="meta"><span class="chip auto">Tâche planifiée</span><span class="chip time">vendredi 16 h 17</span></div>
+          <p><strong>Collecter et exporter.</strong> Le script lit les nouvelles sessions, les caviarde et dépose un bundle de niveau <code>strict</code> (aucun texte issu des messages d'erreur) sous un nom de fichier aléatoire. Avant d'activer la tâche, chacun lance une fois <code>sillage export --preview</code> pour voir tout le texte qui sortirait. Chacun peut l'inspecter avec <code>zcat fichier.jsonl.gz | head</code>.</p>
+          <p class="result"><code>/mnt/p/equipe-ia/sillage/2026-S48/a1b2c3d4.jsonl.gz</code></p>
+        </div></li>
+      </ol>
+    </div>
+
+    <div class="phase">
+      <div class="phase-head"><h3>Cycle mensuel</h3><span class="when">jours 1 à 10 du mois</span></div>
+      <ol class="steps">
+        <li class="step"><span class="num">6</span><div class="step-body">
+          <div class="meta"><span class="chip human">Curateur</span><span class="chip time">jour 1 · 20 min</span></div>
+          <p><strong>Produire le rapport et publier les leçons.</strong> Le premier script fusionne les bundles des 35 derniers jours ; le second régénère le bloc de leçons d'AGENTS.md dans chaque dépôt et n'ouvre une PR que si le contenu a changé.</p>
+          <pre>SILLAGE_PARTAGE=/mnt/p/equipe-ia/sillage ./examples/rapport-equipe.sh
+SILLAGE_PARTAGE=/mnt/p/equipe-ia/sillage ./examples/publier-lecons.sh depots.txt</pre>
+          <p class="result">rapport HTML transmis à la gestion, liste des 10 opportunités, une PR de leçons par dépôt concerné.</p>
+        </div></li>
+        <li class="step"><span class="num">7</span><div class="step-body">
+          <div class="meta"><span class="chip human">Responsable d'outil</span><span class="chip time">jours 1 à 5</span></div>
+          <p><strong>Relire et fusionner la PR de leçons.</strong> Elle ne touche que le bloc entre les marqueurs Sillage d'AGENTS.md. Exemple de leçon : « <code>npm test</code> échoue (script manquant) : utiliser plutôt <code>npm run test:unit</code> ».</p>
+        </div></li>
+        <li class="step"><span class="num">8</span><div class="step-body">
+          <div class="meta"><span class="chip human">Curateur</span><span class="chip human">Responsables d'outil</span><span class="chip time">jour 2 · 30 min</span></div>
+          <p><strong>Revue des opportunités.</strong> On retient 2 ou 3 opportunités parmi les 10 et on nomme un responsable pour chacune. Chaque opportunité indique où corriger (SKILL.md, agent, hook, AGENTS.md) et ses preuves chiffrées.</p>
+        </div></li>
+        <li class="step"><span class="num">9</span><div class="step-body">
+          <div class="meta"><span class="chip human">Responsable d'outil</span><span class="chip auto">Agent coach</span><span class="chip time">jours 3 à 10</span></div>
+          <p><strong>Faire rédiger le correctif.</strong> Dans le dépôt ciblé, le responsable lance l'agent et lui désigne l'opportunité. L'agent lit les preuves avec la CLI, propose le plus petit changement, ajoute un cas d'évaluation si le dépôt en a un, et ouvre une PR <code>sillage: …</code>.</p>
+          <pre>copilot --agent sillage-coach --allow-tool='shell(sillage:*)'</pre>
+          <p class="result">une PR par opportunité, avec l'identifiant, les preuves et l'indicateur attendu à la baisse.</p>
+        </div></li>
+        <li class="step"><span class="num">10</span><div class="step-body">
+          <div class="meta"><span class="chip human">Responsable d'outil</span><span class="chip time">jours 3 à 10</span></div>
+          <p><strong>Relire et décider.</strong> La PR passe par la CI, vos garde-fous déterministes et la revue humaine. Le responsable fusionne, demande des changements ou refuse. L'agent ne fusionne jamais seul.</p>
+        </div></li>
+      </ol>
+    </div>
+
+    <div class="phase">
+      <div class="phase-head"><h3>Retour et mesure</h3><span class="when">ensuite, puis le mois suivant</span></div>
+      <ol class="steps">
+        <li class="step"><span class="num">11</span><div class="step-body">
+          <div class="meta"><span class="chip human">Tous</span><span class="chip time">automatique</span></div>
+          <p><strong>Les sessions suivantes en profitent.</strong> Copilot lit AGENTS.md au démarrage de chaque session et utilise les skills et agents corrigés, y compris chez les personnes qui n'ont pas installé Sillage.</p>
+        </div></li>
+        <li class="step"><span class="num">12</span><div class="step-body">
+          <div class="meta"><span class="chip human">Curateur</span><span class="chip time">jour 1 du mois suivant</span></div>
+          <p><strong>Mesurer l'effet.</strong> Le rapport suivant montre si l'irritant a baissé (par exemple l'échec de <code>npm test</code> passe de 39 sessions à quelques-unes). C'est la preuve à présenter à la gestion, et le cycle recommence à l'étape 6.</p>
+        </div></li>
+      </ol>
+    </div>
+  </section>
+
+  <section aria-labelledby="donnees">
+    <div class="section-head">
+      <h2 id="donnees">Ce qui circule, et ce qui ne circule jamais</h2>
+    </div>
+    <div class="two">
+      <div class="box yes"><h3>Dans un bundle partagé</h3><ul>
+        <li>Compteurs : sessions, appels d'outils, échecs, corrections, refus, tokens</li>
+        <li>Noms des outils, skills, agents, serveurs MCP et dépôts</li>
+        <li>Types d'erreurs avec une empreinte, par exemple <code>script-manquant#b9049d8f</code></li>
+        <li>Identifiants de personne et de session pseudonymisés</li>
+      </ul></div>
+      <div class="box no"><h3>Jamais dans un bundle</h3><ul>
+        <li>Prompts, réponses du modèle, code, contenu de fichiers</li>
+        <li>Sorties brutes des commandes et texte des messages d'erreur (niveau <code>strict</code>, par défaut)</li>
+        <li>Noms de personnes ; aucun classement ni tableau par personne</li>
+        <li>Rien n'est envoyé sur le réseau : le bundle va seulement dans le dossier partagé</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="controles">
+    <div class="section-head">
+      <h2 id="controles">Points de contrôle humains</h2>
+      <p>Rien ne change dans un dépôt sans qu'une personne l'ait approuvé.</p>
+    </div>
+    <ul class="gates">
+      <li><span class="gate-mark">étape 7</span><span><b>PR de leçons</b> : le responsable du dépôt relit le bloc AGENTS.md avant fusion.</span></li>
+      <li><span class="gate-mark">étape 8</span><span><b>Revue mensuelle</b> : les humains choisissent quelles opportunités traiter.</span></li>
+      <li><span class="gate-mark">étape 10</span><span><b>PR du coach</b> : CI, garde-fous déterministes et revue avant toute fusion.</span></li>
+    </ul>
+  </section>
+
+  <footer>Détails et options : <a href="https://github.com/boisvertmathieu/sillage/blob/main/docs/flux-equipe.md">docs/flux-equipe.md</a> dans le dépôt Sillage.</footer>
+</div>
+</body>
+</html>

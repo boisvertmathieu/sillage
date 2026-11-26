@@ -24,7 +24,7 @@ Sillage transforme ces journaux en trois choses :
 ```mermaid
 flowchart LR
   A["Sessions Copilot CLI<br/>~/.copilot/session-state/*/events.jsonl"] -->|collect<br/>caviardage| B["Magasin local<br/>enregistrements normalisés"]
-  B -->|export niveau metrics| C["Bundles anonymisés<br/>(partage d'équipe)"]
+  B -->|export niveau strict| C["Bundles pseudonymisés<br/>(partage d'équipe)"]
   B --> D["Analyse<br/>friction · erreurs · skills · MCP · contexte"]
   C --> D
   D --> E["Rapport HTML / MD<br/>gestion & équipes"]
@@ -84,6 +84,8 @@ Options communes : `--since 30d|12w|2026-10-01`, `--repo owner/nom`, `--bundle-d
 
 **Déploiement en équipe pas à pas** (rôles, planification Windows, publication des leçons) :
 [docs/flux-equipe.md](docs/flux-equipe.md).
+
+[![Flux d'équipe Sillage : qui fait quoi, et quand](docs/img/flux-sillage.png)](docs/flux-equipe.md)
 
 ## Ce que Sillage détecte
 
