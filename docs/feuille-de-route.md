@@ -4,12 +4,12 @@
 
 | Indicateur | Pourquoi |
 |---|---|
-| Sessions et personnes actives / semaine | Adoption réelle, au-delà des licences. |
+| Sessions et personnes actives / semaine | Adoption réelle, au-delà des licences (CLI seulement : l'onboarding estime la part IDE). |
 | Part de sessions fluides | Qualité de l'expérience ; doit monter quand on corrige les irritants. |
 | Heures perdues estimées (ordre de grandeur) | Langage de la gestion ; tendance plus importante que la valeur absolue. |
-| Opportunités ouvertes → corrigées (avant/après) | Preuve que la boucle d'amélioration fonctionne. |
+| Opportunités résolues / en baisse / nouvelles (`sillage compare`) | Preuve que la boucle d'amélioration fonctionne. |
 | Taux d'activation et de correction des skills | Retour sur investissement de chaque skill/agent de la DP. |
-| Coût en contexte (définitions d'outils, sorties volumineuses), taux de cache | Base de mesure pour les optimisations de tokens. |
+| Coût en contexte (définitions d'outils, sorties volumineuses), taux de cache, unités IA (AIU) | Base de mesure pour les optimisations de tokens et le coût. |
 
 ## Phases
 
@@ -17,10 +17,13 @@
 Collecte locale, rapport, opportunités, leçons, `AGENTS.md`, agent coach (CLI), démo ; serveur MCP optionnel.
 
 ### V1 — équipe pilote (2-4 semaines)
+* Prérequis (livré) : onboarding outillé (`sillage onboard`, agent `sillage-onboarding`), d'abord par
+  le responsable sur son poste ; critères de démarrage dans `docs/guide-agent-onboarding.md`.
 * 5 à 10 volontaires : `sillage export` hebdomadaire vers un partage restreint (`examples/collecte-equipe.sh`).
 * Rapport d'équipe mensuel (`examples/rapport-equipe.sh`) et revue de 30 min : 3 opportunités choisies,
   un responsable chacune.
-* Calibrer le lexique de corrections et les seuils sur les données réelles (`sillage.toml`).
+* Lexique de corrections, motifs de caviardage et seuils calibrés pendant l'onboarding (`sillage.toml`).
+* Effet des premiers correctifs mesuré avec `sillage compare --pivot <date de fusion>`.
 
 ### V2 — boucle d'auto-amélioration outillée
 * Agent `sillage-coach` lancé sur les opportunités retenues → PR avec preuves.

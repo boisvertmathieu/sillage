@@ -18,3 +18,29 @@ jobs:
       - run: pytest -q
       - name: Démo de bout en bout
         run: python -m sillage demo --output-dir /tmp/sillage-demo && test -s /tmp/sillage-demo/rapport.html
+
+  windows:
+    # postes sans WSL : Sillage doit fonctionner en Python Windows natif
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: pytest -q
+      - run: python -m sillage demo --output-dir sillage-demo
+
+  wheel:
+    # paquet à déposer sur un partage interne quand github.com n'est pas joignable depuis les postes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip wheel . --no-deps -w dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sillage-wheel
+          path: dist/*.whl

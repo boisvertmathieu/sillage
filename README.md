@@ -1,156 +1,86 @@
 # Sillage
 
-**Observatoire des sessions GitHub Copilot CLI et moteur d'auto-amélioration des agents, skills et instructions.**
+**Observatoire des sessions GitHub Copilot CLI et boucle d'auto-amélioration des agents, skills et instructions.**
 
-> Le *sillage* est la trace qu'un navire laisse derrière lui. Chaque session Copilot laisse la sienne :
-> Sillage la lit pour que les suivantes aillent plus vite.
+Chaque session Copilot laisse une trace dans `~/.copilot/session-state/`. Sillage la lit, sans serveur MCP
+et sans aucune dépendance (Python 3.11+), pour :
 
-Nos sessions Copilot produisent des milliers d'événements (appels d'outils, erreurs, corrections,
-refus de permission, skills invoqués, sous-agents, tokens...). Aujourd'hui, ils dorment dans
-`~/.copilot/session-state/` et **personne ne les exploite** : on ne sait pas quels skills aident ou nuisent,
-quelles erreurs reviennent chaque semaine chez tout le monde, ni ce que coûte notre configuration MCP.
+1. **montrer** à la gestion l'adoption, la friction et le coût, sans jamais classer les personnes ;
+2. **trouver** quoi corriger (skill, agent, AGENTS.md, hook, MCP, permissions), avec les preuves et l'endroit ;
+3. **réinjecter** les leçons dans les sessions suivantes par le `AGENTS.md` des dépôts, puis **prouver**
+   l'effet avant/après.
 
-Sillage transforme ces journaux en trois choses :
+[![Flux d'équipe Sillage](docs/img/flux-sillage.png)](docs/flux-equipe.md)
 
-1. **Visibilité** : un tableau de bord d'équipe (adoption, friction, échecs, coût en contexte, santé des
-   skills/agents/serveurs MCP), **sans jamais classer les personnes**.
-2. **Opportunités d'amélioration** priorisées et prouvées : « ce hook de garde-fou plante dans 39 sessions »,
-   « ce skill est corrigé 0,7 fois par session », « `npm test` échoue dans ce dépôt, l'équipe contourne
-   avec `npm run test:unit` »... avec **où** corriger (SKILL.md, .agent.md, AGENTS.md, hook, mcp-config).
-3. **Leçons apprises réinjectées** dans les futures sessions par le `AGENTS.md` des dépôts (bloc idempotent,
-   publié par PR) : la boucle d'auto-amélioration se ferme. **Aucun serveur MCP n'est requis** ; un serveur
-   MCP optionnel (`sillage_lessons`) existe pour les organisations qui autorisent les MCP tiers.
+## Démarrer le pilote
 
-```mermaid
-flowchart LR
-  A["Sessions Copilot CLI<br/>~/.copilot/session-state/*/events.jsonl"] -->|collect<br/>caviardage| B["Magasin local<br/>enregistrements normalisés"]
-  B -->|export niveau strict| C["Bundles pseudonymisés<br/>(partage d'équipe)"]
-  B --> D["Analyse<br/>friction · erreurs · skills · MCP · contexte"]
-  C --> D
-  D --> E["Rapport HTML / MD<br/>gestion & équipes"]
-  D --> F["Opportunités<br/>(où corriger, preuves)"]
-  D --> G["Leçons apprises"]
-  F -->|agent sillage-coach| H["PR : SKILL.md, agents,<br/>AGENTS.md, garde-fous"]
-  G -->|"PR : bloc AGENTS.md<br/>(MCP optionnel)"| A
-  H -->|revue + garde-fous| A
-```
+| # | Qui | Quoi | Commande |
+|---|---|---|---|
+| 1 | Responsable du pilote | Installer et faire **son** onboarding en premier : valide Sillage sur de vrais journaux et produit le `sillage.toml` d'équipe | voir ci-dessous |
+| 2 | Responsable | Créer le dossier partagé (écriture pour tous, lecture pour le curateur seulement), puis vérifier les [critères de démarrage](docs/guide-agent-onboarding.md#critères-de-démarrage-du-pilote) | — |
+| 3 | Chaque participant | Installer, faire son onboarding (20 min), planifier la collecte du vendredi | [flux-equipe.md §1-2](docs/flux-equipe.md) |
+| 4 | Curateur, une fois par mois | Rapport, revue de 30 min, publication des leçons par PR | `examples/rapport-equipe.sh` · `examples/publier-lecons.sh` |
+| 5 | Responsable d'outil | Faire rédiger le correctif d'une opportunité retenue (PR relue, jamais fusionnée seule) | `copilot --agent sillage-coach` |
+| 6 | Curateur, 2 à 4 semaines après | Mesurer l'effet du correctif | `sillage compare --pivot <date>` |
 
-## Démarrage rapide (WSL)
+### Installation et onboarding (étapes 1 et 3)
 
 ```bash
-pipx install git+https://<votre-forge>/sillage.git   # ou : pip install -e .   (Python ≥ 3.11, aucune dépendance)
+pipx install git+https://github.com/boisvertmathieu/sillage.git   # ou : pip install --user sillage-*.whl
+sillage copilot-install
+copilot --agent sillage-onboarding --allow-tool='shell(sillage:*)'
 ```
 
-```bash
-sillage demo                 # démonstration complète sur 150 sessions synthétiques -> ./sillage-demo/
-```
+L'agent analyse **tout votre historique** avec `sillage onboard`. Il vérifie :
 
-```bash
-sillage doctor               # vérifie où sont vos sessions, versions de Copilot, dérive de format
-```
+- le format des journaux et les sessions WSL ou Windows ;
+- les textes qui sortiraient d'un export ;
+- le lexique de corrections ;
+- les dépôts et les clones ;
+- l'usage dans l'IDE ;
+- l'installation.
 
-```bash
-sillage report --since 30d --format html -o rapport.html
-```
+Il propose les réglages, écrit après votre accord et ne pose que les questions non déductibles.
+Détails : [guide de l'agent d'onboarding](docs/guide-agent-onboarding.md).
 
-```bash
-sillage opportunities --limit 10
-```
-
-```bash
-sillage lessons --repo mon-org/mon-depot --write AGENTS.md
-```
-
-Sous WSL, Sillage lit `~/.copilot` **et** les sessions lancées côté Windows (`/mnt/c/Users/*/.copilot`).
+Pour essayer sans données : `sillage demo` (150 sessions synthétiques dans `./sillage-demo/`).
 
 ## Commandes
 
 | Commande | Rôle |
 |---|---|
-| `sillage collect` | Lit les sessions (incrémental) et met à jour le magasin local (`~/.local/share/sillage`). |
-| `sillage report` | Rapport `md` (défaut), `html` (tableau de bord autonome) ou `json`. |
-| `sillage opportunities` | Opportunités priorisées : preuves, action proposée, où corriger. `--category`, `--format json`. |
-| `sillage lessons` | Leçons apprises ; `--repo`, `--skill`, `--write AGENTS.md`, `--format agents-md`. |
-| `sillage export` | Bundle `.jsonl.gz` pseudonymisé à partager (niveau `strict` par défaut) ; `--preview` montre tout le texte qui sortirait. |
-| `sillage inspect <bundle>` | Liste tout le texte contenu dans un bundle, pour revue avant ou après dépôt. |
-| `sillage report --bundle-dir <dossier>` | Vue d'équipe à partir des bundles déposés dans un dossier partagé. |
-| `sillage copilot-install` | Installe l'agent `sillage-coach` et le skill `sillage-amelioration` dans `~/.copilot`. |
-| `sillage mcp` | *Optionnel* : serveur MCP stdio en lecture seule, si la politique de l'organisation autorise les MCP tiers. |
-| `sillage doctor` | Diagnostic : sessions trouvées, versions de Copilot CLI, types d'événements inconnus. |
-| `sillage init-config` | Écrit un `sillage.toml` commenté (seuils, confidentialité, motifs de correction). |
+| `sillage onboard` | Diagnostic sur tout l'historique : points flous, motifs de caviardage, questions. `--partageable`, `--depots`. |
+| `sillage doctor` | Sessions trouvées, versions de Copilot, dérive de format. |
+| `sillage collect` | Lecture incrémentale des sessions vers le magasin local. |
+| `sillage report` | Rapport `md`, `html` (tableau de bord autonome) ou `json`. |
+| `sillage opportunities` | Opportunités priorisées : preuves, action, où corriger. |
+| `sillage lessons --repo o/n --write AGENTS.md` | Bloc de leçons idempotent pour un dépôt. |
+| `sillage compare --pivot DATE` | Indicateurs et opportunités avant / après un correctif (`--id`, `--window`). |
+| `sillage export -o f.jsonl.gz` · `--preview` | Bundle pseudonymisé (niveau `strict` par défaut) ; `--preview` affiche tout le texte qui sortirait. |
+| `sillage inspect <bundle>` | Tout le texte contenu dans un bundle. |
+| `sillage copilot-install` | Agents `sillage-onboarding` et `sillage-coach`, skill `sillage-amelioration`. |
+| `sillage init-config` | `sillage.toml` commenté (confidentialité, seuils, lexique). |
 
-Options communes : `--since 30d|12w|2026-10-01`, `--repo owner/nom`, `--bundle-dir <dossier>`,
-`--copilot-home <dir>`, `-o fichier`.
+Options communes : `--since 30d`, `--repo owner/nom`, `--bundle-dir <partage>` (vue d'équipe),
+`--copilot-home <dir>`, `-o fichier`. Le serveur MCP `sillage mcp` est optionnel : il sert seulement si la
+politique de l'organisation autorise les MCP tiers.
 
-**Déploiement en équipe pas à pas** (rôles, planification Windows, publication des leçons) :
-[docs/flux-equipe.md](docs/flux-equipe.md).
+## Confidentialité en bref
 
-[![Flux d'équipe Sillage : qui fait quoi, et quand](docs/img/flux-sillage.png)](docs/flux-equipe.md)
+- Rien ne quitte le poste sans `sillage export`, ou la tâche planifiée que la personne a elle-même créée.
+- Export `strict` par défaut : ni prompt, ni code, ni sortie, ni mot issu d'un message d'erreur, seulement
+  un type et une empreinte (`reseau#9f3a1c2e`).
+- Caviardage intégré, plus les motifs de l'organisation (`[confidentialite]`) proposés par l'onboarding.
+- Identité pseudonymisée avec un sel **local au poste** ; aucune vue par personne. Les dépôts utilisés par
+  moins de *k* personnes sont regroupés.
 
-## Ce que Sillage détecte
+Charte complète et procédure pour les sessions qui touchent la production : [docs/gouvernance.md](docs/gouvernance.md).
 
-| Signal | Exemple d'opportunité | Où corriger |
-|---|---|---|
-| Erreur d'outil récurrente (signature normalisée) + **contournement observé** | `mvn test` échoue (PKIX) dans 31 sessions ; solution vue 12 fois : `mvn -s ~/.m2/settings-dp.xml test` | AGENTS.md du dépôt |
-| Skill souvent corrigé après invocation | « servicenow-incident » : 0,7 correction / session | SKILL.md |
-| Skill dormant (chargé partout, jamais déclenché) | « confluence-recherche » : 0 % d'activation | description du skill |
-| Serveur MCP qui ne démarre pas / appels en échec | « dynatrace » : 53 sessions sans le serveur | mcp-config.json |
-| Sous-agent instable, définition d'agent invalide | « aq-tests » échoue dans 53 % des cas | .agent.md |
-| Refus humains répétés → garde-fou manquant | `git push` refusé 36 fois | hook / règle deny + instructions |
-| Approbations répétées → bruit de permissions | `git status` approuvé 265 fois | profil d'autorisations |
-| Hook de garde-fou qui plante | `preToolUse : jq: not found` dans 39 sessions | .github/hooks |
-| Coût en contexte | définitions d'outils = 16 % de la fenêtre ; `terraform plan` = 28 000 car. / appel | profils MCP, compression |
-| Dépôt à forte friction, boucles d'échec | `dp/portail-citoyen` : 14 boucles | AGENTS.md |
+## Pour aller plus loin
 
-Détails des calculs : [docs/methodologie.md](docs/methodologie.md).
+[Flux d'équipe pas à pas](docs/flux-equipe.md) · [Guide de l'agent d'onboarding](docs/guide-agent-onboarding.md) ·
+[Méthodologie et règles](docs/methodologie.md) · [Feuille de route](docs/feuille-de-route.md)
 
-## Intégration Copilot CLI (sans MCP)
-
-```bash
-sillage copilot-install
-```
-
-* **Leçons dans AGENTS.md** : `sillage lessons --bundle-dir <partage> --repo owner/nom --write AGENTS.md`
-  ou `examples/publier-lecons.sh` pour ouvrir une PR par dépôt. Copilot lit AGENTS.md nativement : aucune
-  installation ni autorisation n'est nécessaire chez les personnes qui en profitent.
-* **Agent `sillage-coach`** : `copilot --agent sillage-coach --allow-tool='shell(sillage:*)'`. Il lit les
-  opportunités avec la CLI, propose le plus petit correctif et ouvre une PR avec les preuves. Il ne
-  fusionne jamais seul : vos garde-fous et revues s'appliquent.
-* **Skill `sillage-amelioration`** : permet de demander en langage naturel « comment se passent nos sessions ? ».
-* **Optionnel, si les serveurs MCP tiers sont autorisés** : `sillage copilot-install --mcp` ajoute le
-  serveur `sillage` (outils `sillage_lessons`, `sillage_opportunities`, `sillage_overview`,
-  `sillage_skill_health`) pour consulter la mémoire collective en direct pendant une session.
-
-## Confidentialité et éthique (résumé)
-
-* **Rien ne quitte le poste** sans `sillage export` (ou la tâche planifiée que la personne a créée).
-* Le magasin local ne contient **jamais** les journaux bruts : seulement compteurs, noms d'outils/skills,
-  signatures d'erreurs caviardées et, au niveau local `redacted`, de courts extraits **caviardés**.
-* Export **`strict` par défaut** : aucun mot issu d'un message d'erreur ne sort, seulement un type d'erreur
-  et une empreinte (`reseau#9f3a1c2e`). Niveaux `metrics` et `redacted` sur décision explicite.
-* Caviardage intégré (jetons, mots de passe, courriels, IP, noms d'hôtes, NAS, cartes...) **plus** motifs
-  propres à l'organisation (`[confidentialite]` dans `sillage.toml`), réappliqués à chaque export.
-* `sillage export --preview` et `sillage inspect <bundle>` affichent **tout le texte** qui sort.
-* **Aucun classement individuel**, k-anonymat sur les extraits, nom de fichier de bundle aléatoire.
-
-Charte complète, risques résiduels et procédure pour les sessions qui touchent la production :
-[docs/gouvernance.md](docs/gouvernance.md).
-
-## Compatibilité
-
-Format d'entrée : journaux `events.jsonl` de **GitHub Copilot CLI 1.0.x**, conformes au schéma
-`session-events.schema.json` livré dans le paquet npm `@github/copilot`. Le lecteur est tolérant (champs
-manquants, lignes tronquées, types inconnus) et `sillage doctor` signale toute dérive de format après une
-mise à jour de Copilot. Python 3.11+, bibliothèque standard uniquement (adapté aux postes corporatifs).
-
-## Développement
-
-```bash
-pip install -e '.[dev]'
-```
-
-```bash
-ruff check . && pytest -q
-```
-
-Feuille de route : [docs/feuille-de-route.md](docs/feuille-de-route.md).
+Compatibilité : journaux `events.jsonl` de Copilot CLI 1.0.x, lus d'après les types de `@github/copilot-sdk`
+(lecture tolérante) ; Linux, WSL, Windows natif et macOS.
+Développement : `pip install -e '.[dev]' && ruff check . && pytest -q`.

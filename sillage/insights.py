@@ -50,12 +50,18 @@ class Opportunity:
 
 @dataclass
 class Lesson:
-    scope: str  # "repo:<nom>" | "skill:<nom>" | "global"
+    scope: str  # "repo:<nom>" | "repos:<nom>,<nom>" | "skill:<nom>" | "global"
     text: str
     occurrences: int
     sessions: int
     users: int
     last_seen: str | None = None
+
+    def applies_to_repo(self, repository: str) -> bool:
+        if self.scope == "global":
+            return True
+        kind, _, names = self.scope.partition(":")
+        return kind in ("repo", "repos") and repository.lower() in names.lower().split(",")
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -422,11 +428,13 @@ def lessons(
         else:
             text = f"{what} échoue souvent ({display(p.signature)}). {agent_hint(p.signature)}"
         # une leçon d'erreur ne va que dans les dépôts où l'erreur a été vue (pas de bruit ailleurs) ;
-        # « global » seulement pour les erreurs vues hors de tout dépôt
+        # « global » pour les erreurs d'outils MCP (indépendantes du dépôt) et celles vues hors dépôt
         repos = sorted(p.repositories)
-        scopes = [f"repo:{r}" for r in repos] if repos else ["global"]
-        for scope in scopes:
-            out.append(Lesson(scope, text, p.occurrences, len(p.sessions), len(p.users), p.last_seen))
+        if p.category == "mcp" or not repos:
+            scope = "global"
+        else:
+            scope = f"repo:{repos[0]}" if len(repos) == 1 else "repos:" + ",".join(repos)
+        out.append(Lesson(scope, text, p.occurrences, len(p.sessions), len(p.users), p.last_seen))
     for perm in a.permissions:
         if perm["denied_by_user"] >= min_sessions:
             out.append(
@@ -454,7 +462,7 @@ def lessons(
                 )
             )
     if repository:
-        out = [lsn for lsn in out if lsn.scope in (f"repo:{repository}", "global")]
+        out = [lsn for lsn in out if lsn.applies_to_repo(repository)]
     if skill:
         out = [lsn for lsn in out if lsn.scope in (f"skill:{skill}", "global")]
     return sorted(out, key=lambda lsn: (-lsn.sessions, -lsn.occurrences))

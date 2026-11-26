@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import shutil
@@ -125,6 +126,24 @@ def cmd_compare(args: argparse.Namespace, cfg: Config) -> int:
     c = compare(recs, pivot, window, cfg.thresholds, cfg.k_anonymity, args.id)
     _emit(_json(c.to_dict()) if args.format == "json" else render_comparison(c), args.output)
     return 0
+
+
+def cmd_onboard(args: argparse.Namespace, cfg: Config) -> int:
+    from sillage.onboard import render_onboarding, run_onboarding, write_depots
+
+    store = LocalStore()
+    if not args.no_collect:
+        store.collect(cfg, args.copilot_home)
+    homes = candidate_homes(args.copilot_home or cfg.copilot_homes or None)
+    result = run_onboarding(list(store.load().values()), cfg, homes=homes)
+    if args.format == "json":
+        _emit(_json(result.to_dict(shareable=args.partageable)), args.output)
+    else:
+        _emit(render_onboarding(result, shareable=args.partageable), args.output)
+    if args.depots:
+        write_depots(Path(args.depots), result.depots)
+        print(f"Brouillon écrit : {args.depots} ({len(result.depots)} dépôt(s))", file=sys.stderr)
+    return 0 if result.ready else 2
 
 
 def cmd_lessons(args: argparse.Namespace, cfg: Config) -> int:
@@ -377,8 +396,9 @@ def cmd_copilot_install(args: argparse.Namespace, cfg: Config) -> int:
     print(
         "\nMode par défaut (sans MCP) : les leçons arrivent aux agents par le bloc Sillage d'AGENTS.md "
         "(voir `sillage lessons --write` et examples/publier-lecons.sh).\n"
-        "Pour que l'agent coach et le skill appellent `sillage` sans demande d'autorisation :\n"
-        "  copilot --allow-tool='shell(sillage:*)'"
+        "Première étape recommandée, l'agent d'onboarding (analyse tout votre historique) :\n"
+        "  copilot --agent sillage-onboarding --allow-tool='shell(sillage:*)'\n"
+        "Agent coach (correctifs par PR) : copilot --agent sillage-coach --allow-tool='shell(sillage:*)'"
     )
     server = {"type": "local", "command": shutil.which("sillage") or "sillage", "args": ["mcp"], "tools": ["*"]}
     if args.mcp:
@@ -451,6 +471,15 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--format", choices=["md", "json"], default="md")
     sp.set_defaults(func=cmd_compare)
 
+    sp = sub.add_parser("onboard", help="diagnostic d'onboarding sur tout l'historique : points flous et questions")
+    sp.add_argument("--copilot-home", action="append", help="répertoire .copilot (répétable)")
+    sp.add_argument("--no-collect", action="store_true")
+    sp.add_argument("--format", choices=["md", "json"], default="md")
+    sp.add_argument("--partageable", action="store_true", help="statuts et constats seulement, sans texte de session")
+    sp.add_argument("--depots", metavar="FICHIER", help="écrire un brouillon de depots.txt (dépôts et clones locaux)")
+    sp.add_argument("-o", "--output")
+    sp.set_defaults(func=cmd_onboard)
+
     sp = sub.add_parser("lessons", help="leçons apprises (réinjectables dans AGENTS.md)")
     data_opts(sp)
     sp.add_argument("--skill")
@@ -509,6 +538,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    for stream in (sys.stdout, sys.stderr):  # console Windows (cp1252) : accents et symboles sans erreur
+        if hasattr(stream, "reconfigure") and (stream.encoding or "").lower().replace("-", "") != "utf8":
+            with contextlib.suppress(OSError, ValueError):
+                stream.reconfigure(encoding="utf-8", errors="replace")
     parser = build_parser()
     args = parser.parse_args(argv)
     try:

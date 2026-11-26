@@ -132,7 +132,7 @@ a:focus-visible{outline:2px solid var(--human);outline-offset:2px}
       <p>Quatre acteurs humains et deux automatismes. L'effort humain se concentre chez le curateur ; les membres de l'équipe n'ont rien à faire après l'installation.</p>
     </div>
     <div class="roles">
-      <div class="role"><div class="who"><span class="dot human"></span>Membre de l'équipe</div><div class="effort">5 min une fois, puis rien</div><p>Installe Sillage, planifie la collecte hebdomadaire et continue d'utiliser Copilot CLI normalement.</p></div>
+      <div class="role"><div class="who"><span class="dot human"></span>Membre de l'équipe</div><div class="effort">20 min une fois, puis rien</div><p>Installe Sillage, fait son onboarding avec l'agent, planifie la collecte hebdomadaire et continue d'utiliser Copilot CLI normalement.</p></div>
       <div class="role"><div class="who"><span class="dot human"></span>Curateur (lead IA)</div><div class="effort">≈ 1 h par mois + revue 30 min</div><p>Produit le rapport mensuel, publie les leçons, anime la revue et mesure l'effet des corrections.</p></div>
       <div class="role"><div class="who"><span class="dot human"></span>Responsable d'outil</div><div class="effort">1 à 3 PR à relire par mois</div><p>Propriétaire d'un skill, d'un agent, d'un hook ou d'un dépôt. Lance l'agent coach et décide de fusionner ou non.</p></div>
       <div class="role"><div class="who"><span class="dot human"></span>Gestion</div><div class="effort">lecture du rapport mensuel</div><p>Reçoit le tableau de bord HTML : adoption, sessions fluides, temps perdu estimé, effet des corrections. Aucune donnée par personne.</p></div>
@@ -228,7 +228,7 @@ a:focus-visible{outline:2px solid var(--human);outline-offset:2px}
   </g>
 
   <!-- nœuds : x = centre − 68, y = milieu du couloir − 23 -->
-  <g class="n-human"><rect class="box" x="192" y="72" width="136" height="46" rx="8"/><text class="t1" x="260" y="91" text-anchor="middle">Installe Sillage</text><text class="t2" x="260" y="107" text-anchor="middle">pipx · doctor</text></g>
+  <g class="n-human"><rect class="box" x="192" y="72" width="136" height="46" rx="8"/><text class="t1" x="260" y="91" text-anchor="middle">Installe Sillage</text><text class="t2" x="260" y="107" text-anchor="middle">pipx · onboarding</text></g>
   <g class="n-auto"><rect class="box" x="192" y="150" width="136" height="46" rx="8"/><text class="t1" x="260" y="169" text-anchor="middle">Tâche hebdo créée</text><text class="t2" x="260" y="185" text-anchor="middle">schtasks</text></g>
   <g class="n-human"><rect class="box" x="192" y="306" width="136" height="46" rx="8"/><text class="t1" x="260" y="325" text-anchor="middle">Prépare le partage</text><text class="t2" x="260" y="341" text-anchor="middle">dossier · dépôts</text></g>
 
@@ -246,7 +246,7 @@ a:focus-visible{outline:2px solid var(--human);outline-offset:2px}
   <g class="n-data"><rect class="box" x="832" y="540" width="136" height="46" rx="8"/><text class="t1" x="900" y="559" text-anchor="middle">Dépôts mis à jour</text><text class="t2" x="900" y="575" text-anchor="middle">AGENTS.md · skills</text></g>
 
   <g class="n-human"><rect class="box" x="992" y="72" width="136" height="46" rx="8"/><text class="t1" x="1060" y="91" text-anchor="middle">Sessions suivantes</text><text class="t2" x="1060" y="107" text-anchor="middle">moins d'irritants</text></g>
-  <g class="n-human"><rect class="box" x="992" y="306" width="136" height="46" rx="8"/><text class="t1" x="1060" y="325" text-anchor="middle">Mesure l'effet</text><text class="t2" x="1060" y="341" text-anchor="middle">avant / après</text></g>
+  <g class="n-human"><rect class="box" x="992" y="306" width="136" height="46" rx="8"/><text class="t1" x="1060" y="325" text-anchor="middle">Mesure l'effet</text><text class="t2" x="1060" y="341" text-anchor="middle">sillage compare</text></g>
 
   <!-- pastilles d'étapes -->
   <g class="badge" text-anchor="middle">
@@ -279,21 +279,24 @@ a:focus-visible{outline:2px solid var(--human);outline-offset:2px}
       <div class="phase-head"><h3>Mise en place</h3><span class="when">une seule fois</span></div>
       <ol class="steps">
         <li class="step"><span class="num">1</span><div class="step-body">
-          <div class="meta"><span class="chip human">Membre de l'équipe</span><span class="chip time">5 min</span></div>
-          <p><strong>Installer Sillage et vérifier qu'il trouve les sessions.</strong> <code>doctor</code> compte les sessions (WSL et Windows) et signale les serveurs MCP désactivés par la politique.</p>
+          <div class="meta"><span class="chip human">Membre de l'équipe</span><span class="chip auto">Agent d'onboarding</span><span class="chip time">20 min</span></div>
+          <p><strong>Installer Sillage et faire son onboarding.</strong> L'agent analyse tout l'historique des sessions du poste, lève les points flous (format des journaux, motifs de caviardage, lexique de corrections, dépôts, usage dans l'IDE) et ne pose que les questions impossibles à déduire. Le responsable du pilote le fait en premier, sur son poste. Voir <a href="guide-agent-onboarding.md">le guide de l'agent</a>.</p>
           <pre>pipx install git+https://github.com/boisvertmathieu/sillage.git
-sillage doctor</pre>
+sillage copilot-install
+copilot --agent sillage-onboarding --allow-tool='shell(sillage:*)'</pre>
+          <p class="result">fiche d'onboarding locale, <code>sillage.toml</code> relu, aucun point bloquant.</p>
         </div></li>
         <li class="step"><span class="num">2</span><div class="step-body">
           <div class="meta"><span class="chip human">Membre de l'équipe</span><span class="chip time">2 min</span></div>
           <p><strong>Planifier la collecte hebdomadaire</strong> avec le Planificateur de tâches Windows, plus fiable que le cron de WSL qui ne tourne que si WSL est ouvert.</p>
           <pre>schtasks.exe /Create /SC WEEKLY /D FRI /ST 16:17 /TN "Sillage collecte" /TR "wsl.exe -e bash -lc 'SILLAGE_PARTAGE=/mnt/p/equipe-ia/sillage ~/sillage/examples/collecte-equipe.sh'"</pre>
+          <p>Sans WSL (Windows natif) : <code>examples/collecte-equipe.ps1</code>, commande de planification en tête du script.</p>
         </div></li>
         <li class="step"><span class="num">3</span><div class="step-body">
           <div class="meta"><span class="chip human">Curateur</span><span class="chip time">≈ 30 min</span></div>
-          <p><strong>Préparer le terrain.</strong> Créer le dossier partagé (accès restreint), écrire <code>depots.txt</code> (une ligne <code>owner/nom /chemin/du/clone</code> par dépôt suivi), installer l'agent coach et demander aux responsables d'ajouter l'extrait Sillage à leur AGENTS.md.</p>
-          <pre>sillage copilot-install</pre>
-          <p class="result">l'agent <code>sillage-coach</code> et le skill <code>sillage-amelioration</code> sont dans <code>~/.copilot</code>.</p>
+          <p><strong>Préparer le terrain.</strong> Créer le dossier partagé (accès restreint), consolider le <code>sillage.toml</code> d'équipe à partir des onboardings, écrire <code>depots.txt</code> (brouillon : <code>sillage onboard --depots depots.txt</code>) et demander aux responsables d'ajouter l'extrait Sillage à leur AGENTS.md.</p>
+          <pre>sillage onboard --depots depots.txt</pre>
+          <p class="result">dossier partagé, <code>sillage.toml</code> d'équipe et <code>depots.txt</code> prêts.</p>
         </div></li>
       </ol>
     </div>
@@ -353,7 +356,8 @@ SILLAGE_PARTAGE=/mnt/p/equipe-ia/sillage ./examples/publier-lecons.sh depots.txt
         </div></li>
         <li class="step"><span class="num">12</span><div class="step-body">
           <div class="meta"><span class="chip human">Curateur</span><span class="chip time">jour 1 du mois suivant</span></div>
-          <p><strong>Mesurer l'effet.</strong> Le rapport suivant montre si l'irritant a baissé (par exemple l'échec de <code>npm test</code> passe de 39 sessions à quelques-unes). C'est la preuve à présenter à la gestion, et le cycle recommence à l'étape 6.</p>
+          <p><strong>Mesurer l'effet.</strong> 2 à 4 semaines après la fusion d'un correctif, <code>sillage compare</code> ramène chaque opportunité à 100 sessions avant et après : « résolue », « en baisse », « stable » ou « nouvelle ». C'est la preuve à présenter à la gestion, et le cycle recommence à l'étape 6.</p>
+          <pre>sillage compare --bundle-dir /mnt/p/equipe-ia/sillage --pivot 2026-12-05</pre>
         </div></li>
       </ol>
     </div>

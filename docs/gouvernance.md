@@ -38,6 +38,31 @@ signature caviardée) permet de compter la même erreur sur plusieurs postes san
 d'équipe restent utiles (« `npm test` échoue (erreur de type « script introuvable ») : utiliser plutôt
 `npm run test:unit` ») ; le détail du message reste consultable par chacun dans son rapport local.
 
+## Les pseudonymes et le sel
+
+| Valeur | Sel | Pourquoi |
+|---|---|---|
+| Personne, session | **local au poste** (`~/.local/share/sillage/salt`, aléatoire), toujours | Un sel connu de toute l'équipe permettrait de retrouver une personne en testant `HMAC(prénom@poste)` pour chaque collègue |
+| Dépôt (si `hash_repositories = true`) | **d'équipe** (`$SILLAGE_SALT`), obligatoire | Le même dépôt doit avoir le même pseudonyme sur tous les postes |
+
+Conséquences :
+
+* une personne qui utilise deux postes compte pour deux dans « personnes touchées ». C'est volontaire :
+  mieux vaut surestimer légèrement que permettre la réidentification ;
+* le pseudonyme de dépôt masque le nom aux lecteurs du rapport, mais pas à qui détient le sel d'équipe
+  (les noms de dépôts se devinent). Ne pas le présenter comme une anonymisation ;
+* `hash_repositories = true` sans `$SILLAGE_SALT` fait échouer l'export avec un message explicite.
+
+En vue d'équipe, un dépôt utilisé par moins de *k* personnes est regroupé avec les autres petits dépôts
+(ligne « dépôts regroupés ») : sa friction et ses heures perdues seraient celles d'une seule personne.
+
+## L'onboarding
+
+`sillage onboard` (et l'agent `sillage-onboarding`) lit tout l'historique **sur le poste**. La fiche
+complète contient des chemins, des noms de dépôts et des extraits caviardés : elle reste locale. Seule la
+version `--partageable` (statuts et constats techniques, aucun texte de session) peut être transmise au
+responsable du pilote. Voir [guide-agent-onboarding.md](guide-agent-onboarding.md).
+
 ## Le caviardage
 
 Appliqué à la collecte, **puis de nouveau à l'export** avec les motifs en vigueur ce jour-là : un motif ajouté
@@ -74,7 +99,8 @@ motifs = [
 ## Procédure recommandée pour une organisation qui touche la production
 
 1. Garder `export_privacy = "strict"` (défaut).
-2. Pendant le pilote, chaque participant exécute une fois `sillage export --preview` : la commande affiche
+2. Pendant l'onboarding, chaque participant valide les motifs proposés par `sillage onboard`, puis
+   exécute `sillage export --preview` : la commande affiche
    **tout le texte** qui sortirait, sans rien écrire. Toute valeur sensible devient un motif dans
    `[confidentialite]`, partagé dans le `sillage.toml` d'équipe.
 3. Le curateur passe `sillage inspect` sur les bundles reçus le premier mois.
@@ -90,7 +116,8 @@ motifs = [
 2. **Minimisation** : jamais de prompt, de code, de contenu de fichier ni de sortie brute dans un bundle.
 3. **Consentement par l'action** : rien ne quitte le poste sans `sillage export` (ou la tâche planifiée
    que la personne a elle-même créée).
-4. **Pseudonymisation** HMAC-SHA256 de l'identité et des identifiants de session ; nom de fichier aléatoire.
+4. **Pseudonymisation** HMAC-SHA256 de l'identité et des identifiants de session avec un **sel local au
+   poste**, jamais partagé ; nom de fichier aléatoire.
 5. **k-anonymat** (défaut k = 2) sur les extraits affichés dans un rapport d'équipe.
 6. **Lecture seule côté agents** : l'agent coach ouvre des PR soumises aux revues et garde-fous ; il ne
    fusionne jamais seul.

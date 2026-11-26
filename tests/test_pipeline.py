@@ -47,7 +47,7 @@ def test_lessons_capture_observed_fixes(demo_analysis):
     items = lessons(demo_analysis, repository="dp/portail-citoyen")
     text = " ".join(lsn.text for lsn in items)
     assert "npm run test:unit" in text
-    assert all(lsn.scope in ("repo:dp/portail-citoyen", "global") for lsn in items)
+    assert all(lsn.applies_to_repo("dp/portail-citoyen") for lsn in items)
     mvn = " ".join(lsn.text for lsn in lessons(demo_analysis, repository="dp/api-dossiers"))
     assert "mvn -s ~/.m2/settings-dp.xml test" in mvn
 
@@ -223,6 +223,7 @@ def test_cli_copilot_install(tmp_path):
     target = tmp_path / ".copilot"
     assert main(["copilot-install", "--target", str(target), "--mcp"]) == 0
     assert (target / "agents" / "sillage-coach.agent.md").exists()
+    assert (target / "agents" / "sillage-onboarding.agent.md").exists()
     assert (target / "skills" / "sillage-amelioration" / "SKILL.md").exists()
     cfg = json.loads((target / "mcp-config.json").read_text())
     assert cfg["mcpServers"]["sillage"]["args"] == ["mcp"]
@@ -287,8 +288,27 @@ def test_policy_disabled_mcp_is_not_an_outage(events):
 
 
 def test_example_scripts_are_valid_bash():
+    import shutil
+
+    if not shutil.which("bash"):
+        pytest.skip("bash absent")
     for script in (Path(__file__).resolve().parents[1] / "examples").glob("*.sh"):
         assert subprocess.run(["bash", "-n", str(script)], capture_output=True).returncode == 0, script
+
+
+def test_example_powershell_scripts_parse():
+    import shutil
+
+    pwsh = shutil.which("pwsh") or shutil.which("powershell")
+    if not pwsh:
+        pytest.skip("PowerShell absent")
+    for script in (Path(__file__).resolve().parents[1] / "examples").glob("*.ps1"):
+        check = (
+            "$e=$null; [System.Management.Automation.Language.Parser]::ParseFile("
+            f"'{script}', [ref]$null, [ref]$e) | Out-Null; if ($e) {{ $e; exit 1 }}"
+        )
+        res = subprocess.run([pwsh, "-NoProfile", "-Command", check], capture_output=True, text=True)
+        assert res.returncode == 0, res.stdout + res.stderr
 
 
 # ------------------------------------------- données confidentielles / production

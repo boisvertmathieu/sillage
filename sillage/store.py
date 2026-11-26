@@ -14,6 +14,7 @@ import gzip
 import json
 import os
 import secrets
+import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -33,6 +34,8 @@ BUNDLE_MAGIC = "sillage-bundle"
 def data_dir() -> Path:
     if os.environ.get("SILLAGE_HOME"):
         d = Path(os.environ["SILLAGE_HOME"])
+    elif sys.platform == "win32" and os.environ.get("LOCALAPPDATA") and not os.environ.get("XDG_DATA_HOME"):
+        d = Path(os.environ["LOCALAPPDATA"]) / "sillage"  # Windows natif (hors WSL)
     else:
         base = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
         d = Path(base) / "sillage"

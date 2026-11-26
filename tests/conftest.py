@@ -16,6 +16,8 @@ def _isolated_home(tmp_path, monkeypatch):
     """Aucun test ne lit ni n'écrit dans le vrai ~/.copilot ou ~/.local/share/sillage."""
     monkeypatch.setenv("SILLAGE_HOME", str(tmp_path / "sillage-home"))
     monkeypatch.setenv("COPILOT_HOME", str(tmp_path / "copilot-home-vide"))
+    monkeypatch.setenv("SILLAGE_IDE_ROOTS", "")
+    monkeypatch.delenv("SILLAGE_PARTAGE", raising=False)
     monkeypatch.delenv("SILLAGE_SALT", raising=False)
     monkeypatch.delenv("SILLAGE_CONFIG", raising=False)
     monkeypatch.chdir(tmp_path)

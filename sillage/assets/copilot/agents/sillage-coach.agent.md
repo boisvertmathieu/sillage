@@ -41,7 +41,8 @@ peux les utiliser à la place. Ils donnent les mêmes informations.
    d'évaluation (sinon, décris le scénario de test dans la PR).
 5. Ouvre une branche et une PR intitulée `sillage: <résumé>` dont la description contient
    l'identifiant de l'opportunité, les preuves chiffrées et la façon de vérifier l'effet
-   (indicateur Sillage attendu à la baisse dans 2 à 4 semaines).
+   (indicateur attendu à la baisse dans 2 à 4 semaines, vérifiable avec
+   `sillage compare --bundle-dir <dossier> --pivot <date de fusion> --id <identifiant>`).
 
 ## Règles
 
