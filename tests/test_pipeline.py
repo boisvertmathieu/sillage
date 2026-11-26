@@ -499,3 +499,13 @@ def test_lessons_block_accepts_ansi_agents_md(tmp_path, demo_analysis):
     assert write_lessons_block(f, render_lessons_block(lessons(demo_analysis, repository="dp/portail-citoyen")))
     text = f.read_text(encoding="utf-8")
     assert text.startswith("# Mon dépôt") and MARK_START in text
+
+
+def test_lessons_block_keeps_crlf_and_stays_idempotent(tmp_path, demo_analysis):
+    f = tmp_path / "AGENTS.md"
+    f.write_bytes(b"# Depot\r\n\r\nTexte.\r\n")
+    block = render_lessons_block(lessons(demo_analysis, repository="dp/portail-citoyen"))
+    assert write_lessons_block(f, block) is True
+    assert write_lessons_block(f, block) is False
+    data = f.read_bytes()
+    assert b"\r\n" in data and b"\n" not in data.replace(b"\r\n", b"")

@@ -500,7 +500,9 @@ def _read_text_tolerant(path: Path) -> str:
 
 def write_lessons_block(path: Path, block: str) -> bool:
     """Insère ou remplace le bloc entre marqueurs (idempotent). Retourne True si le fichier a changé."""
-    original = _read_text_tolerant(path) if path.exists() else ""
+    raw = _read_text_tolerant(path) if path.exists() else ""
+    newline = "\r\n" if "\r\n" in raw else "\n"  # conserver le style du fichier (CRLF sous Windows)
+    original = raw.replace("\r\n", "\n")
     if MARK_START in original and MARK_END in original:
         before, _, rest = original.partition(MARK_START)
         _, _, after = rest.partition(MARK_END)
@@ -509,6 +511,6 @@ def write_lessons_block(path: Path, block: str) -> bool:
         sep = "" if not original else ("\n" if original.endswith("\n") else "\n\n")
         updated = original + sep + block
     if updated != original:
-        path.write_text(updated, encoding="utf-8")
+        path.write_bytes(updated.replace("\n", newline).encode("utf-8"))  # binaire : aucune conversion implicite
         return True
     return False
